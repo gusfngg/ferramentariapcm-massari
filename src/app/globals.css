@@ -1,0 +1,86 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap');
+
+:root {
+  --font-display: 'Sora', sans-serif;
+  --font-jetbrains: 'JetBrains Mono', monospace;
+  --font-inter: 'Inter', sans-serif;
+
+  --color-red: #DC2626;
+  --color-red-dark: #B91C1C;
+  --color-black: #0A0A0A;
+  --color-white: #FFFFFF;
+  --color-gray-light: #F5F5F5;
+  --color-gray-border: #E5E7EB;
+}
+
+html, body {
+  background-color: #FFFFFF;
+  color: #0A0A0A;
+  font-family: var(--font-inter);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar customization */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #F5F5F5;
+}
+::-webkit-scrollbar-thumb {
+  background: #DC2626;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #B91C1C;
+}
+
+/* Custom select */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Transitions */
+* {
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Remove number input arrows */
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+@layer components {
+  .btn-primary {
+    @apply rounded-xl bg-brand-red px-8 py-4 text-lg font-bold uppercase tracking-wider text-white shadow-sm hover:bg-brand-red-dark transition-colors duration-200 active:scale-95;
+  }
+  .btn-secondary {
+    @apply rounded-xl bg-brand-black px-8 py-4 text-lg font-bold uppercase tracking-wider text-white shadow-sm hover:bg-brand-black-soft transition-colors duration-200 active:scale-95;
+  }
+  .btn-ghost {
+    @apply rounded-xl border-2 border-brand-black px-8 py-4 text-lg font-bold uppercase tracking-wider text-brand-black hover:bg-brand-black hover:text-white transition-colors duration-200 active:scale-95;
+  }
+  .section-title {
+    @apply font-display text-3xl font-semibold tracking-[0.02em] text-brand-black;
+  }
+  .step-badge {
+    @apply inline-flex h-8 w-8 items-center justify-center rounded-full bg-brand-red text-sm font-black text-white;
+  }
+  .tool-badge-available {
+    @apply inline-flex items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 font-mono text-xs font-bold uppercase text-green-700;
+  }
+  .tool-badge-unavailable {
+    @apply inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 font-mono text-xs font-bold uppercase text-red-700;
+  }
+  .tool-badge-maintenance {
+    @apply inline-flex items-center gap-1 rounded-full bg-yellow-100 px-2 py-0.5 font-mono text-xs font-bold uppercase text-yellow-700;
+  }
+}

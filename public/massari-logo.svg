@@ -1,0 +1,15 @@
+<svg width="820" height="360" viewBox="0 0 820 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Logo Massari">
+  <rect width="820" height="360" fill="#ffffff"/>
+
+  <!-- Simplified red mark -->
+  <path d="M310 50c0-15 12-27 27-27h7c8 0 15 3 20 8l45 44l45-44c5-5 12-8 20-8h7c15 0 27 12 27 27v110h-52V89l-36 36c-10 10-27 10-37 0l-36-36v71h-52V50z" fill="#ff1010"/>
+
+  <!-- Arc -->
+  <path d="M55 228c88-66 201-99 355-99s267 33 355 99" fill="none" stroke="#95a4a7" stroke-width="7" stroke-linecap="round"/>
+
+  <!-- Word mark -->
+  <text x="410" y="312" text-anchor="middle" fill="#0b0d15"
+    font-family="Inter, Arial, sans-serif" font-size="102" font-weight="900" letter-spacing="3">
+    MASSARI
+  </text>
+</svg>

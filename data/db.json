@@ -1,0 +1,262 @@
+{
+  "employees": [
+    {
+      "id": "emp-001",
+      "name": "João Silva",
+      "role": "mechanic",
+      "badge": "555",
+      "password": "000555",
+      "department": "Manutenção A",
+      "shift": "A"
+    },
+    {
+      "id": "emp-009",
+      "name": "Felipe Souza",
+      "role": "mechanic",
+      "badge": "560",
+      "password": "123456",
+      "department": "Manutenção B",
+      "shift": "B"
+    },
+    {
+      "id": "emp-admin-001",
+      "name": "Admin Massari",
+      "role": "admin",
+      "badge": "000",
+      "password": "123456",
+      "department": "Administração",
+      "shift": "A"
+    }
+  ],
+  "tools": [
+    {
+      "id": "tool-002",
+      "name": "Esmerilhadeira 9\" 2200W",
+      "category": "power",
+      "code": "ESM-002",
+      "description": "Esmerilhadeira angular 9\" 2200W para desbaste/corte pesado (mineração/industrial).",
+      "available": true,
+      "condition": "good",
+      "location": "Armário P2"
+    },
+    {
+      "id": "tool-003",
+      "name": "Alicate Universal 8\"",
+      "category": "hand",
+      "code": "ALI-001",
+      "description": "Alicate universal 8 polegadas, cabo isolado 1000V.",
+      "available": false,
+      "condition": "good",
+      "location": "Prateleira A2"
+    },
+    {
+      "id": "tool-004",
+      "name": "Alicate de Corte 6\"",
+      "category": "cutting",
+      "code": "ALI-002",
+      "description": "Alicate de corte diagonal 6 polegadas.",
+      "available": true,
+      "condition": "fair",
+      "location": "Prateleira A2"
+    },
+    {
+      "id": "tool-005",
+      "name": "Jogo de Soquetes 1/2\" (10-32mm)",
+      "category": "hand",
+      "code": "SOC-001",
+      "description": "Jogo de soquetes 1/2\" de 10 a 32mm com catraca e extensões (uso pesado).",
+      "available": true,
+      "condition": "good",
+      "location": "Prateleira A3"
+    },
+    {
+      "id": "tool-006",
+      "name": "Chave de Impacto 1/2\" 900Nm",
+      "category": "power",
+      "code": "IMP-001",
+      "description": "Chave de impacto 1/2\" alto torque (aprox. 900Nm) para manutenção industrial/mineração.",
+      "available": true,
+      "condition": "good",
+      "location": "Armário P1"
+    },
+    {
+      "id": "tool-007",
+      "name": "Pistola de Graxa (Engraxadeira)",
+      "category": "hand",
+      "code": "LUB-001",
+      "description": "Engraxadeira manual para lubrificação de rolamentos/pontos de graxa.",
+      "available": false,
+      "condition": "good",
+      "location": "Armário M2"
+    },
+    {
+      "id": "tool-008",
+      "name": "Marreta 2kg",
+      "category": "hand",
+      "code": "MAR-002",
+      "description": "Marreta 2kg, cabo de fibra, para montagem/desmontagem e serviços pesados.",
+      "available": true,
+      "condition": "good",
+      "location": "Prateleira B2"
+    },
+    {
+      "id": "tool-009",
+      "name": "Martelete Perfurador SDS-Plus 800W",
+      "category": "power",
+      "code": "SDS-001",
+      "description": "Martelete SDS-Plus 800W para perfuração em concreto/estrutura.",
+      "available": true,
+      "condition": "good",
+      "location": "Armário P1"
+    },
+    {
+      "id": "tool-010",
+      "name": "Macaco Hidráulico Garrafa 20t",
+      "category": "hand",
+      "code": "MAC-020",
+      "description": "Macaco hidráulico tipo garrafa 20 toneladas para apoio/elevação.",
+      "available": false,
+      "condition": "good",
+      "location": "Armário M2"
+    },
+    {
+      "id": "tool-011",
+      "name": "Trena Profissional 8m",
+      "category": "measuring",
+      "code": "TRE-002",
+      "description": "Trena 8 metros, trava automática, para medições em campo/oficina.",
+      "available": true,
+      "condition": "good",
+      "location": "Prateleira C1"
+    },
+    {
+      "id": "tool-012",
+      "name": "Alicate Amperímetro True RMS",
+      "category": "electrical",
+      "code": "AMP-001",
+      "description": "Alicate amperímetro True RMS (AC/DC) para diagnóstico elétrico industrial.",
+      "available": true,
+      "condition": "good",
+      "location": "Armário E1"
+    },
+    {
+      "id": "tool-013",
+      "name": "Megômetro 1000V (Teste de Isolação)",
+      "category": "electrical",
+      "code": "MEG-001",
+      "description": "Megômetro 1000V para teste de isolação em motores/cabos (manutenção elétrica).",
+      "available": false,
+      "condition": "fair",
+      "location": "Armário E2"
+    },
+    {
+      "id": "tool-014",
+      "name": "Esmerilhadeira 4.5\"",
+      "category": "power",
+      "code": "ESM-001",
+      "description": "Esmerilhadeira angular 4.5\" 900W, proteção anti-reinicialização.",
+      "available": true,
+      "condition": "good",
+      "location": "Armário P2"
+    },
+    {
+      "id": "tool-015",
+      "name": "Serra Sabre 1200W",
+      "category": "cutting",
+      "code": "SAB-001",
+      "description": "Serra sabre 1200W para corte de perfis/metais e manutenção industrial.",
+      "available": true,
+      "condition": "good",
+      "location": "Armário P2"
+    },
+    {
+      "id": "tool-016",
+      "name": "Paquímetro Digital 150mm",
+      "category": "measuring",
+      "code": "PAQ-001",
+      "description": "Paquímetro digital 150mm resolução 0.01mm, IP54.",
+      "available": true,
+      "condition": "good",
+      "location": "Armário M1"
+    },
+    {
+      "id": "tool-017",
+      "name": "Chave Torque 1/2\" 300Nm",
+      "category": "hand",
+      "code": "TOR-001",
+      "description": "Chave de torque estalo 1/2\" 60-300Nm com certificado de calibração.",
+      "available": true,
+      "condition": "good",
+      "location": "Armário M1"
+    },
+    {
+      "id": "tool-018",
+      "name": "Alicate Crimper RJ45",
+      "category": "electrical",
+      "code": "CRI-001",
+      "description": "Alicate crimpador para conectores RJ45 e RJ11.",
+      "available": true,
+      "condition": "good",
+      "location": "Armário E1"
+    },
+    {
+      "id": "tool-019",
+      "name": "Testador de Tensão",
+      "category": "electrical",
+      "code": "TES-001",
+      "description": "Testador de tensão sem contato 12-1000V AC, alarme sonoro e visual.",
+      "available": true,
+      "condition": "good",
+      "location": "Armário E2"
+    },
+    {
+      "id": "tool-020",
+      "name": "Extrator de Rolamento 3 Garras",
+      "category": "hand",
+      "code": "EXT-001",
+      "description": "Extrator de rolamento 3 garras para desmontagem segura em manutenção.",
+      "available": true,
+      "condition": "maintenance",
+      "location": "Armário M2"
+    },
+    {
+      "id": "tool-bcca1a35",
+      "name": "Maquina de solda",
+      "category": "electrical",
+      "code": "26782",
+      "description": "",
+      "available": true,
+      "condition": "good",
+      "location": "Prateleira A"
+    }
+  ],
+  "withdrawals": [
+    {
+      "id": "wd-bc8b5486",
+      "toolId": "tool-010",
+      "employeeId": "emp-001",
+      "withdrawnAt": "2026-03-28T01:50:20.669Z",
+      "status": "active",
+      "notes": ""
+    },
+    {
+      "id": "wd-8cfd1508",
+      "toolId": "tool-006",
+      "employeeId": "emp-001",
+      "withdrawnAt": "2026-03-28T01:59:51.308Z",
+      "expectedReturnAt": "2026-03-28T02:02:00.000Z",
+      "status": "returned",
+      "notes": "",
+      "returnedAt": "2026-03-28T18:40:00.950Z"
+    },
+    {
+      "id": "wd-74c34e48",
+      "toolId": "tool-003",
+      "employeeId": "emp-009",
+      "withdrawnAt": "2026-03-28T18:39:24.049Z",
+      "expectedReturnAt": "2026-03-28T19:39:00.000Z",
+      "status": "active",
+      "notes": ""
+    }
+  ]
+}
