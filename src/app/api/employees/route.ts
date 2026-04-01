@@ -7,10 +7,19 @@ import { v4 as uuidv4 } from 'uuid';
 
 const ALLOWED_ROLES: Employee['role'][] = ['mechanic', 'admin'];
 const ALLOWED_SHIFTS: Employee['shift'][] = ['A', 'B', 'C'];
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET() {
   try {
-    return NextResponse.json(getEmployees().filter((employee) => !isSupremeAdmin(employee)).map(sanitizeEmployee));
+    return NextResponse.json(
+      getEmployees().filter((employee) => !isSupremeAdmin(employee)).map(sanitizeEmployee),
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        },
+      }
+    );
   } catch {
     return NextResponse.json({ error: 'Erro ao buscar funcionários' }, { status: 500 });
   }

@@ -2,10 +2,16 @@ import { NextResponse } from 'next/server';
 import { createWithdrawal, getEmployeeById, getToolById, getWithdrawals } from '@/lib/db';
 import { Withdrawal } from '@/lib/types';
 import { v4 as uuidv4 } from 'uuid';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET() {
   try {
-    return NextResponse.json(getWithdrawals());
+    return NextResponse.json(getWithdrawals(), {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      },
+    });
   } catch {
     return NextResponse.json({ error: 'Erro ao buscar retiradas' }, { status: 500 });
   }

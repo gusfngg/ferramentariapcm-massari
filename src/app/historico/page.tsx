@@ -48,9 +48,9 @@ export default function HistoricoPage() {
     const loadData = async () => {
       try {
         const [employeesResponse, toolsResponse, withdrawalsResponse] = await Promise.all([
-          fetch('/api/employees'),
-          fetch('/api/tools'),
-          fetch('/api/withdrawals'),
+          fetch(`/api/employees?t=${Date.now()}`, { cache: 'no-store' }),
+          fetch(`/api/tools?t=${Date.now()}`, { cache: 'no-store' }),
+          fetch(`/api/withdrawals?t=${Date.now()}`, { cache: 'no-store' }),
         ]);
 
         const [employeesPayload, toolsPayload, withdrawalsPayload] = await Promise.all([
@@ -75,6 +75,8 @@ export default function HistoricoPage() {
     };
 
     loadData();
+    const interval = window.setInterval(loadData, 4000);
+    return () => window.clearInterval(interval);
   }, []);
 
   const getEmployee = (id: string) => employees.find((e) => e.id === id);

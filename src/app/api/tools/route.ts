@@ -6,10 +6,16 @@ import { v4 as uuidv4 } from 'uuid';
 
 const ALLOWED_CATEGORIES: Tool['category'][] = ['hand', 'power', 'measuring', 'electrical', 'cutting'];
 const ALLOWED_CONDITIONS: Tool['condition'][] = ['good', 'fair', 'maintenance'];
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET() {
   try {
-    return NextResponse.json(getTools());
+    return NextResponse.json(getTools(), {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+      },
+    });
   } catch {
     return NextResponse.json({ error: 'Erro ao buscar ferramentas' }, { status: 500 });
   }

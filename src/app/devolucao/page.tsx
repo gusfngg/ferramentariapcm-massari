@@ -45,9 +45,9 @@ export default function DevolucaoPage() {
   const loadData = async () => {
     try {
       const [employeesResponse, toolsResponse, withdrawalsResponse] = await Promise.all([
-        fetch('/api/employees'),
-        fetch('/api/tools'),
-        fetch('/api/withdrawals'),
+        fetch(`/api/employees?t=${Date.now()}`, { cache: 'no-store' }),
+        fetch(`/api/tools?t=${Date.now()}`, { cache: 'no-store' }),
+        fetch(`/api/withdrawals?t=${Date.now()}`, { cache: 'no-store' }),
       ]);
 
       const [employeesPayload, toolsPayload, withdrawalsPayload] = await Promise.all([
@@ -71,7 +71,11 @@ export default function DevolucaoPage() {
     }
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => {
+    loadData();
+    const interval = window.setInterval(loadData, 4000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const activeWithdrawals = withdrawals.filter((w) => w.status === 'active');
   const canReturnAnyTool = employee?.role === 'admin';

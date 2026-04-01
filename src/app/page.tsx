@@ -74,8 +74,8 @@ export default function HomePage() {
     const loadInitialData = async () => {
       try {
         const [toolsResponse, employeesResponse] = await Promise.all([
-          fetch('/api/tools'),
-          fetch('/api/employees'),
+          fetch(`/api/tools?t=${Date.now()}`, { cache: 'no-store' }),
+          fetch(`/api/employees?t=${Date.now()}`, { cache: 'no-store' }),
         ]);
 
         const [toolsPayload, employeesPayload] = await Promise.all([
@@ -252,7 +252,7 @@ export default function HomePage() {
         return;
       }
 
-      const toolsResponse = await fetch('/api/tools');
+      const toolsResponse = await fetch(`/api/tools?t=${Date.now()}`, { cache: 'no-store' });
       const toolsPayload = await toolsResponse.json();
       setTools(Array.isArray(toolsPayload) ? toolsPayload : []);
       setStep('success');
