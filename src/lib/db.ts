@@ -21,6 +21,7 @@ const DATABASE_URL =
 const LEGACY_DB_PATH = path.join(process.cwd(), 'data', 'db.json');
 const TOOLS_CATALOG_VERSION = 'mining-industrial-v1';
 const SUPREME_ADMIN_VERSION = 'supreme-admin-v1';
+const LEAN_BASELINE_VERSION = 'lean-baseline-v1';
 
 let pool: Pool | null = null;
 let initializationPromise: Promise<void> | null = null;
@@ -326,6 +327,86 @@ async function syncSupremeAdminIfNeeded(db: Queryable) {
   });
 }
 
+async function enforceLeanBaselineIfNeeded(db: Queryable) {
+  const current = await getMeta(db, 'lean_baseline_version');
+  if (current === LEAN_BASELINE_VERSION) {
+    return;
+  }
+
+  const raw = fs.existsSync(LEGACY_DB_PATH) ? fs.readFileSync(LEGACY_DB_PATH, 'utf-8') : '';
+  const legacy = raw ? (JSON.parse(raw) as Database) : { employees: [], tools: [], withdrawals: [] };
+  const baselineTools = legacy.tools.slice(0, 10);
+  const adminFromSeed = legacy.employees.find((employee) => employee.badge === SUPREME_ADMIN_BADGE);
+
+  await runTransaction(async (client) => {
+    await client.query(`DELETE FROM withdrawals`);
+
+    const preferredAdmin =
+      (await firstRow<EmployeeRow>(client, `SELECT * FROM employees WHERE badge = $1 LIMIT 1`, [
+        SUPREME_ADMIN_BADGE,
+      ])) ||
+      (await firstRow<EmployeeRow>(client, `SELECT * FROM employees WHERE id = $1 LIMIT 1`, [SUPREME_ADMIN_ID])) ||
+      (await firstRow<EmployeeRow>(client, `SELECT * FROM employees WHERE role = 'admin' ORDER BY name ASC LIMIT 1`));
+
+    const adminName = adminFromSeed?.name || preferredAdmin?.name || 'Admin Massari';
+    const adminPassword = adminFromSeed?.password || preferredAdmin?.password || '123456';
+    const adminDepartment = adminFromSeed?.department || preferredAdmin?.department || 'Administração';
+    const adminShift = adminFromSeed?.shift || preferredAdmin?.shift || 'A';
+    const adminPhoto = adminFromSeed?.photoUrl || preferredAdmin?.photo_url || null;
+    const sourceAdminId = preferredAdmin?.id || SUPREME_ADMIN_ID;
+
+    await client.query(
+      `
+        INSERT INTO employees (id, name, role, badge, password, department, shift, photo_url)
+        VALUES ($1, $2, 'admin', $3, $4, $5, $6, $7)
+        ON CONFLICT (id) DO UPDATE
+          SET name = EXCLUDED.name,
+              role = 'admin',
+              badge = EXCLUDED.badge,
+              password = EXCLUDED.password,
+              department = EXCLUDED.department,
+              shift = EXCLUDED.shift,
+              photo_url = EXCLUDED.photo_url
+      `,
+      [SUPREME_ADMIN_ID, adminName, SUPREME_ADMIN_BADGE, adminPassword, adminDepartment, adminShift, adminPhoto]
+    );
+
+    if (sourceAdminId !== SUPREME_ADMIN_ID) {
+      await client.query(`DELETE FROM employees WHERE id = $1`, [sourceAdminId]);
+    }
+
+    await client.query(`DELETE FROM employees WHERE id != $1`, [SUPREME_ADMIN_ID]);
+
+    for (const tool of baselineTools) {
+      await client.query(
+        `
+          INSERT INTO tools (id, name, category, code, description, available, condition, location, photo_url)
+          VALUES ($1, $2, $3, $4, $5, TRUE, 'good', $6, $7)
+          ON CONFLICT (id) DO UPDATE
+            SET name = EXCLUDED.name,
+                category = EXCLUDED.category,
+                code = EXCLUDED.code,
+                description = EXCLUDED.description,
+                available = TRUE,
+                condition = 'good',
+                location = EXCLUDED.location,
+                photo_url = EXCLUDED.photo_url
+        `,
+        [tool.id, tool.name, tool.category, tool.code, tool.description, tool.location, tool.photoUrl || null]
+      );
+    }
+
+    const keepToolIds = baselineTools.map((tool) => tool.id);
+    if (keepToolIds.length > 0) {
+      await client.query(`DELETE FROM tools WHERE id != ALL($1::text[])`, [keepToolIds]);
+    } else {
+      await client.query(`DELETE FROM tools`);
+    }
+
+    await setMeta(client, 'lean_baseline_version', LEAN_BASELINE_VERSION);
+  });
+}
+
 async function initializeDatabase() {
   const db = getPool();
 
@@ -407,6 +488,7 @@ async function initializeDatabase() {
   await setMeta(db, 'initialized_at', new Date().toISOString());
   await syncSupremeAdminIfNeeded(db);
   await syncToolsCatalogIfNeeded(db);
+  await enforceLeanBaselineIfNeeded(db);
 }
 
 async function ensureInitialized() {
