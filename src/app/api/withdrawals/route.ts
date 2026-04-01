@@ -16,6 +16,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const expectedReturnTime = String(body.expectedReturnTime || '');
     const costCenter = String(body.costCenter || '').trim();
+    const serviceOrder = String(body.serviceOrder || '').trim();
 
     // Check tool availability
     const tool = getToolById(body.toolId);
@@ -33,6 +34,9 @@ export async function POST(request: Request) {
 
     if (!costCenter) {
       return NextResponse.json({ error: 'Informe o centro de custo de uso da ferramenta' }, { status: 400 });
+    }
+    if (!serviceOrder) {
+      return NextResponse.json({ error: 'Informe a ordem de serviço' }, { status: 400 });
     }
 
     const withdrawnAt = new Date();
@@ -55,7 +59,7 @@ export async function POST(request: Request) {
       expectedReturnAt: expectedReturnAt.toISOString(),
       status: 'active',
       costCenter,
-      notes: body.notes || '',
+      notes: `OS: ${serviceOrder}`,
     };
 
     createWithdrawal(newWithdrawal);

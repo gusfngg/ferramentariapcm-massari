@@ -59,6 +59,7 @@ export default function HomePage() {
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expectedReturnTime, setExpectedReturnTime] = useState('');
   const [costCenter, setCostCenter] = useState('');
+  const [serviceOrder, setServiceOrder] = useState('');
   const [searchTool, setSearchTool] = useState('');
   const [badge, setBadge] = useState('');
   const [password, setPassword] = useState('');
@@ -109,6 +110,7 @@ export default function HomePage() {
       setSelectedTool(null);
       setExpectedReturnTime('');
       setCostCenter('');
+      setServiceOrder('');
       setSearchTool('');
       setError('');
       setPassword('');
@@ -208,6 +210,7 @@ export default function HomePage() {
     setSelectedTool(tool);
     setExpectedReturnTime(getDefaultExpectedReturnTime());
     setCostCenter('');
+    setServiceOrder('');
     setError('');
     setStep('confirm');
   };
@@ -220,6 +223,10 @@ export default function HomePage() {
     }
     if (!costCenter.trim()) {
       setError('Informe o centro de custo onde a ferramenta será usada.');
+      return;
+    }
+    if (!serviceOrder.trim()) {
+      setError('Informe a ordem de serviço.');
       return;
     }
 
@@ -235,6 +242,7 @@ export default function HomePage() {
           employeeId: employee.id,
           expectedReturnTime,
           costCenter: costCenter.trim(),
+          serviceOrder: serviceOrder.trim(),
         }),
       });
 
@@ -259,6 +267,7 @@ export default function HomePage() {
     setSelectedTool(null);
     setExpectedReturnTime('');
     setCostCenter('');
+    setServiceOrder('');
     setSearchTool('');
     setError('');
     setStep('tool');
@@ -634,18 +643,38 @@ export default function HomePage() {
                   </p>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="cost-center">Centro de Custo</Label>
-                  <Input
-                    id="cost-center"
-                    placeholder="Ex.: PCM, Manutenção Mina, Oficina Central..."
-                    value={costCenter}
-                    onChange={(event) => setCostCenter(event.target.value)}
-                    className="h-11 rounded-2xl"
-                  />
-                  <p className="text-xs text-gray-500">
-                    Informe onde a ferramenta será utilizada.
-                  </p>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="cost-center">Centro de Custo</Label>
+                    <Input
+                      id="cost-center"
+                      placeholder="P2-PN01"
+                      value={costCenter}
+                      onChange={(event) => setCostCenter(event.target.value.toUpperCase())}
+                      className="h-11 rounded-2xl uppercase"
+                      autoCapitalize="characters"
+                      spellCheck={false}
+                    />
+                    <p className="text-xs text-gray-500">
+                      Informe onde a ferramenta será utilizada.
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="service-order">Ordem de Serviço</Label>
+                    <Input
+                      id="service-order"
+                      placeholder="12345"
+                      value={serviceOrder}
+                      onChange={(event) => setServiceOrder(event.target.value.toUpperCase())}
+                      className="h-11 rounded-2xl uppercase"
+                      autoCapitalize="characters"
+                      spellCheck={false}
+                    />
+                    <p className="text-xs text-gray-500">
+                      Informe a OS relacionada a retirada.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm leading-6 text-brand-red">
@@ -694,6 +723,7 @@ export default function HomePage() {
                 <DataRow label="Ferramenta" value={selectedTool.name} />
                 <DataRow label="Código" value={selectedTool.code} mono />
                 <DataRow label="Centro de Custo" value={costCenter || '—'} />
+                <DataRow label="Ordem de Serviço" value={serviceOrder || '—'} />
                 <DataRow label="Devolução prevista" value={expectedReturnTime || '—'} mono />
               </div>
 
