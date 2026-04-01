@@ -1,10 +1,14 @@
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { DatabaseSync } from 'node:sqlite';
 import { normalizeBadge, SUPREME_ADMIN_BADGE, SUPREME_ADMIN_ID } from '@/lib/auth';
 import { Database, Employee, EmployeeRole, Tool, ToolCategory, ToolCondition, Withdrawal, WithdrawalStatus } from '@/lib/types';
 
-const DB_PATH = process.env.TOOL_MANAGER_DB_PATH || path.join(process.cwd(), 'data', 'tool-manager.sqlite');
+const IS_VERCEL = Boolean(process.env.VERCEL);
+const DB_PATH =
+  process.env.TOOL_MANAGER_DB_PATH ||
+  (IS_VERCEL ? path.join(os.tmpdir(), 'tool-manager.sqlite') : path.join(process.cwd(), 'data', 'tool-manager.sqlite'));
 const LEGACY_DB_PATH = path.join(process.cwd(), 'data', 'db.json');
 const TOOLS_CATALOG_VERSION = 'mining-industrial-v1';
 const SUPREME_ADMIN_VERSION = 'supreme-admin-v1';
