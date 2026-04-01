@@ -11,7 +11,7 @@ export const revalidate = 0;
 
 export async function GET() {
   try {
-    return NextResponse.json(getTools(), {
+    return NextResponse.json(await getTools(), {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
       },
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
       photoUrl,
     };
 
-    createTool(newTool);
+    await createTool(newTool);
 
     return NextResponse.json(newTool, { status: 201 });
   } catch (caughtError) {

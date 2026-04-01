@@ -7,7 +7,7 @@ export const revalidate = 0;
 
 export async function GET() {
   try {
-    return NextResponse.json(getWithdrawals(), {
+    return NextResponse.json(await getWithdrawals(), {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
       },
@@ -25,13 +25,13 @@ export async function POST(request: Request) {
     const serviceOrder = String(body.serviceOrder || '').trim();
 
     // Check tool availability
-    const tool = getToolById(body.toolId);
+    const tool = await getToolById(body.toolId);
     if (!tool) return NextResponse.json({ error: 'Ferramenta não encontrada' }, { status: 404 });
     if (!tool.available) return NextResponse.json({ error: 'Ferramenta indisponível' }, { status: 400 });
     if (tool.condition === 'maintenance') return NextResponse.json({ error: 'Ferramenta em manutenção' }, { status: 400 });
 
     // Check employee exists
-    const employee = getEmployeeById(body.employeeId);
+    const employee = await getEmployeeById(body.employeeId);
     if (!employee) return NextResponse.json({ error: 'Funcionário não encontrado' }, { status: 404 });
 
     if (!/^\d{2}:\d{2}$/.test(expectedReturnTime)) {
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
       notes: `OS: ${serviceOrder}`,
     };
 
-    createWithdrawal(newWithdrawal);
+    await createWithdrawal(newWithdrawal);
 
     return NextResponse.json(newWithdrawal, { status: 201 });
   } catch {

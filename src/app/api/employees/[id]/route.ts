@@ -17,7 +17,7 @@ const ALLOWED_SHIFTS: Employee['shift'][] = ['A', 'B', 'C'];
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   try {
     const formData = await request.formData();
-    const employee = getEmployeeById(params.id);
+    const employee = await getEmployeeById(params.id);
 
     if (!employee) return NextResponse.json({ error: 'Funcionário não encontrado' }, { status: 404 });
     if (isSupremeAdmin(employee)) {
@@ -37,7 +37,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
         return NextResponse.json({ error: 'Essa matrícula é reservada para o admin supremo.' }, { status: 400 });
       }
 
-      const hasDuplicateBadge = employeeBadgeExists(nextBadge, params.id);
+      const hasDuplicateBadge = await employeeBadgeExists(nextBadge, params.id);
       if (hasDuplicateBadge) {
         return NextResponse.json({ error: 'Já existe um funcionário com essa matrícula' }, { status: 400 });
       }
@@ -98,7 +98,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       photoUrl: nextPhotoUrl,
     };
 
-    const savedEmployee = updateEmployee(nextEmployee);
+    const savedEmployee = await updateEmployee(nextEmployee);
 
     return NextResponse.json(sanitizeEmployee(savedEmployee || nextEmployee));
   } catch (caughtError) {
@@ -111,14 +111,14 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
   try {
-    const employee = getEmployeeById(params.id);
+    const employee = await getEmployeeById(params.id);
 
     if (!employee) return NextResponse.json({ error: 'Funcionário não encontrado' }, { status: 404 });
     if (isSupremeAdmin(employee)) {
       return NextResponse.json({ error: 'O admin supremo não pode ser removido.' }, { status: 403 });
     }
 
-    const hasActive = hasActiveWithdrawalForEmployee(params.id);
+    const hasActive = await hasActiveWithdrawalForEmployee(params.id);
     if (hasActive) {
       return NextResponse.json(
         { error: 'Funcionário possui ferramentas em uso. Devolva antes de remover.' },
@@ -127,9 +127,9 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
     }
 
     // Remove histórico para permitir exclusão física do funcionário no SQLite (FK RESTRICT).
-    deleteWithdrawalsByEmployeeId(params.id);
+    await deleteWithdrawalsByEmployeeId(params.id);
     removeStoredImage(employee.photoUrl);
-    deleteEmployeeById(params.id);
+    await deleteEmployeeById(params.id);
 
     return NextResponse.json({ success: true });
   } catch {

@@ -12,7 +12,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Informe a matrícula e a senha' }, { status: 400 });
     }
 
-    const employee = getEmployeeByBadgeAndPassword(badge, password);
+    const employee = await getEmployeeByBadgeAndPassword(badge, password);
 
     if (!employee) {
       return NextResponse.json({ error: 'Matrícula ou senha inválida' }, { status: 401 });

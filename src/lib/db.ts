@@ -1,19 +1,29 @@
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
-import { DatabaseSync } from 'node:sqlite';
+import { Pool, PoolClient, QueryResultRow } from 'pg';
 import { normalizeBadge, SUPREME_ADMIN_BADGE, SUPREME_ADMIN_ID } from '@/lib/auth';
-import { Database, Employee, EmployeeRole, Tool, ToolCategory, ToolCondition, Withdrawal, WithdrawalStatus } from '@/lib/types';
+import {
+  Database,
+  Employee,
+  EmployeeRole,
+  Tool,
+  ToolCategory,
+  ToolCondition,
+  Withdrawal,
+  WithdrawalStatus,
+} from '@/lib/types';
 
-const IS_VERCEL = Boolean(process.env.VERCEL);
-const DB_PATH =
-  process.env.TOOL_MANAGER_DB_PATH ||
-  (IS_VERCEL ? path.join(os.tmpdir(), 'tool-manager.sqlite') : path.join(process.cwd(), 'data', 'tool-manager.sqlite'));
+const DATABASE_URL =
+  process.env.DATABASE_URL ||
+  process.env.POSTGRES_URL ||
+  process.env.POSTGRES_URL_NON_POOLING ||
+  process.env.POSTGRES_PRISMA_URL;
 const LEGACY_DB_PATH = path.join(process.cwd(), 'data', 'db.json');
 const TOOLS_CATALOG_VERSION = 'mining-industrial-v1';
 const SUPREME_ADMIN_VERSION = 'supreme-admin-v1';
 
-let connection: DatabaseSync | null = null;
+let pool: Pool | null = null;
+let initializationPromise: Promise<void> | null = null;
 
 type EmployeeRow = {
   id: string;
@@ -32,7 +42,7 @@ type ToolRow = {
   category: ToolCategory;
   code: string;
   description: string;
-  available: number;
+  available: boolean;
   condition: ToolCondition;
   location: string;
   photo_url: string | null;
@@ -42,26 +52,284 @@ type WithdrawalRow = {
   id: string;
   tool_id: string;
   employee_id: string;
-  withdrawn_at: string;
-  expected_return_at: string | null;
-  returned_at: string | null;
+  withdrawn_at: string | Date;
+  expected_return_at: string | Date | null;
+  returned_at: string | Date | null;
   status: WithdrawalStatus;
   cost_center: string | null;
   notes: string | null;
 };
 
-function getConnection() {
-  if (connection) {
-    return connection;
+type Queryable = Pool | PoolClient;
+
+function getPool() {
+  if (!DATABASE_URL) {
+    throw new Error('DATABASE_URL não configurada. Configure a URL do PostgreSQL para iniciar o sistema.');
   }
 
-  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  if (pool) {
+    return pool;
+  }
 
-  const db = new DatabaseSync(DB_PATH);
-  db.exec('PRAGMA journal_mode = WAL;');
-  db.exec('PRAGMA foreign_keys = ON;');
+  pool = new Pool({ connectionString: DATABASE_URL });
+  return pool;
+}
 
-  db.exec(`
+async function firstRow<T extends QueryResultRow>(db: Queryable, text: string, values: unknown[] = []) {
+  const result = await db.query<T>(text, values);
+  return result.rows[0];
+}
+
+async function runTransaction<T>(callback: (client: PoolClient) => Promise<T>) {
+  const currentPool = getPool();
+  const client = await currentPool.connect();
+
+  try {
+    await client.query('BEGIN');
+    const result = await callback(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function getMeta(db: Queryable, key: string) {
+  const row = await firstRow<{ value: string }>(db, `SELECT value FROM app_meta WHERE key = $1`, [key]);
+  return row?.value || null;
+}
+
+async function setMeta(db: Queryable, key: string, value: string) {
+  await db.query(
+    `
+      INSERT INTO app_meta (key, value)
+      VALUES ($1, $2)
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+    `,
+    [key, value]
+  );
+}
+
+async function findAvailableBadge(db: Queryable) {
+  for (let value = 100; value <= 999999; value += 1) {
+    const badge = String(value).padStart(3, '0');
+    const exists = await firstRow<{ id: string }>(db, `SELECT id FROM employees WHERE badge = $1 LIMIT 1`, [badge]);
+    if (!exists) {
+      return badge;
+    }
+  }
+
+  return `${Date.now()}`.slice(-6);
+}
+
+async function seedFromLegacy(legacy: Database) {
+  await runTransaction(async (client) => {
+    for (const employee of legacy.employees) {
+      await client.query(
+        `
+          INSERT INTO employees (id, name, role, badge, password, department, shift, photo_url)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          ON CONFLICT (id) DO NOTHING
+        `,
+        [
+          employee.id,
+          employee.name,
+          employee.role,
+          employee.badge,
+          employee.password,
+          employee.department,
+          employee.shift,
+          employee.photoUrl || null,
+        ]
+      );
+    }
+
+    for (const tool of legacy.tools) {
+      await client.query(
+        `
+          INSERT INTO tools (id, name, category, code, description, available, condition, location, photo_url)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          ON CONFLICT (id) DO NOTHING
+        `,
+        [
+          tool.id,
+          tool.name,
+          tool.category,
+          tool.code,
+          tool.description,
+          tool.available,
+          tool.condition,
+          tool.location,
+          tool.photoUrl || null,
+        ]
+      );
+    }
+
+    for (const withdrawal of legacy.withdrawals) {
+      await client.query(
+        `
+          INSERT INTO withdrawals (
+            id,
+            tool_id,
+            employee_id,
+            withdrawn_at,
+            expected_return_at,
+            returned_at,
+            status,
+            cost_center,
+            notes
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          ON CONFLICT (id) DO NOTHING
+        `,
+        [
+          withdrawal.id,
+          withdrawal.toolId,
+          withdrawal.employeeId,
+          withdrawal.withdrawnAt,
+          withdrawal.expectedReturnAt || null,
+          withdrawal.returnedAt || null,
+          withdrawal.status,
+          withdrawal.costCenter || null,
+          withdrawal.notes || null,
+        ]
+      );
+    }
+  });
+}
+
+async function syncToolsCatalogIfNeeded(db: Queryable) {
+  const current = await getMeta(db, 'tools_catalog_version');
+  if (current === TOOLS_CATALOG_VERSION) {
+    return;
+  }
+
+  if (!fs.existsSync(LEGACY_DB_PATH)) {
+    await setMeta(db, 'tools_catalog_version', TOOLS_CATALOG_VERSION);
+    return;
+  }
+
+  const raw = fs.readFileSync(LEGACY_DB_PATH, 'utf-8');
+  const legacy = JSON.parse(raw) as Database;
+  const catalogTools = legacy.tools.filter((tool) => /^tool-0\d{2}$/.test(tool.id));
+
+  await runTransaction(async (client) => {
+    for (const tool of catalogTools) {
+      const existing = await firstRow<{ id: string; code: string }>(
+        client,
+        `SELECT id, code FROM tools WHERE id = $1`,
+        [tool.id]
+      );
+
+      if (!existing) {
+        await client.query(
+          `
+            INSERT INTO tools (id, name, category, code, description, available, condition, location, photo_url)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          `,
+          [
+            tool.id,
+            tool.name,
+            tool.category,
+            tool.code,
+            tool.description,
+            tool.available,
+            tool.condition,
+            tool.location,
+            tool.photoUrl || null,
+          ]
+        );
+        continue;
+      }
+
+      let nextCode = tool.code;
+      const codeOwner = await firstRow<{ id: string }>(client, `SELECT id FROM tools WHERE code = $1 LIMIT 1`, [
+        nextCode,
+      ]);
+      if (codeOwner && codeOwner.id !== tool.id) {
+        nextCode = existing.code;
+      }
+
+      await client.query(
+        `
+          UPDATE tools
+          SET name = $1, category = $2, code = $3, description = $4, location = $5
+          WHERE id = $6
+        `,
+        [tool.name, tool.category, nextCode, tool.description, tool.location, tool.id]
+      );
+    }
+
+    await setMeta(client, 'tools_catalog_version', TOOLS_CATALOG_VERSION);
+  });
+}
+
+async function syncSupremeAdminIfNeeded(db: Queryable) {
+  const current = await getMeta(db, 'supreme_admin_version');
+  if (current === SUPREME_ADMIN_VERSION) {
+    return;
+  }
+
+  await runTransaction(async (client) => {
+    const supremeById = await firstRow<{ id: string }>(client, `SELECT id FROM employees WHERE id = $1 LIMIT 1`, [
+      SUPREME_ADMIN_ID,
+    ]);
+    const supremeByLegacyBadge = await firstRow<{ id: string }>(
+      client,
+      `SELECT id FROM employees WHERE badge = '900' LIMIT 1`
+    );
+    const reservedHolder = await firstRow<{ id: string }>(
+      client,
+      `SELECT id FROM employees WHERE badge = $1 LIMIT 1`,
+      [SUPREME_ADMIN_BADGE]
+    );
+
+    const promotedId = supremeById?.id || supremeByLegacyBadge?.id;
+
+    if (reservedHolder && promotedId && reservedHolder.id !== promotedId) {
+      const nextBadge = await findAvailableBadge(client);
+      await client.query(`UPDATE employees SET badge = $1 WHERE id = $2`, [nextBadge, reservedHolder.id]);
+    }
+
+    const reservedAfterReassign = await firstRow<{ id: string }>(
+      client,
+      `SELECT id FROM employees WHERE badge = $1 LIMIT 1`,
+      [SUPREME_ADMIN_BADGE]
+    );
+
+    const fallbackAdmin = await firstRow<{ id: string }>(
+      client,
+      `
+        SELECT id
+        FROM employees
+        ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, name ASC
+        LIMIT 1
+      `
+    );
+
+    const targetId = promotedId || reservedAfterReassign?.id || fallbackAdmin?.id;
+    if (targetId) {
+      await client.query(
+        `
+          UPDATE employees
+          SET badge = $1, role = 'admin'
+          WHERE id = $2
+        `,
+        [SUPREME_ADMIN_BADGE, targetId]
+      );
+    }
+
+    await setMeta(client, 'supreme_admin_version', SUPREME_ADMIN_VERSION);
+  });
+}
+
+async function initializeDatabase() {
+  const db = getPool();
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS app_meta (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -74,7 +342,8 @@ function getConnection() {
       badge TEXT NOT NULL UNIQUE,
       password TEXT NOT NULL,
       department TEXT NOT NULL,
-      shift TEXT NOT NULL
+      shift TEXT NOT NULL,
+      photo_url TEXT
     );
 
     CREATE TABLE IF NOT EXISTS tools (
@@ -83,23 +352,22 @@ function getConnection() {
       category TEXT NOT NULL,
       code TEXT NOT NULL UNIQUE,
       description TEXT NOT NULL,
-      available INTEGER NOT NULL DEFAULT 1,
+      available BOOLEAN NOT NULL DEFAULT TRUE,
       condition TEXT NOT NULL,
-      location TEXT NOT NULL
+      location TEXT NOT NULL,
+      photo_url TEXT
     );
 
     CREATE TABLE IF NOT EXISTS withdrawals (
       id TEXT PRIMARY KEY,
-      tool_id TEXT NOT NULL,
-      employee_id TEXT NOT NULL,
-      withdrawn_at TEXT NOT NULL,
-      expected_return_at TEXT,
-      returned_at TEXT,
+      tool_id TEXT NOT NULL REFERENCES tools (id) ON DELETE RESTRICT,
+      employee_id TEXT NOT NULL REFERENCES employees (id) ON DELETE RESTRICT,
+      withdrawn_at TIMESTAMPTZ NOT NULL,
+      expected_return_at TIMESTAMPTZ,
+      returned_at TIMESTAMPTZ,
       status TEXT NOT NULL,
       cost_center TEXT,
-      notes TEXT,
-      FOREIGN KEY (tool_id) REFERENCES tools (id) ON DELETE RESTRICT,
-      FOREIGN KEY (employee_id) REFERENCES employees (id) ON DELETE RESTRICT
+      notes TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_employees_badge ON employees (badge);
@@ -109,281 +377,49 @@ function getConnection() {
     CREATE INDEX IF NOT EXISTS idx_withdrawals_employee_status ON withdrawals (employee_id, status);
   `);
 
-  ensureColumn(db, 'employees', 'photo_url', 'TEXT');
-  ensureColumn(db, 'tools', 'photo_url', 'TEXT');
-  ensureColumn(db, 'withdrawals', 'cost_center', 'TEXT');
-
-  initializeDatabase(db);
-  syncSupremeAdminIfNeeded(db);
-  syncToolsCatalogIfNeeded(db);
-  connection = db;
-  return db;
-}
-
-function ensureColumn(
-  db: DatabaseSync,
-  table: 'employees' | 'tools' | 'withdrawals',
-  column: string,
-  definition: string
-) {
-  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
-  if (columns.some((item) => item.name === column)) {
-    return;
-  }
-
-  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-}
-
-function initializeDatabase(db: DatabaseSync) {
-  const alreadyInitialized = db
-    .prepare(`SELECT value FROM app_meta WHERE key = 'initialized_at'`)
-    .get() as { value: string } | undefined;
-
-  if (alreadyInitialized) {
-    return;
-  }
-
-  const counts = db
-    .prepare(`
+  const counts = await firstRow<{
+    employees_count: string;
+    tools_count: string;
+    withdrawals_count: string;
+  }>(
+    db,
+    `
       SELECT
-        (SELECT COUNT(*) FROM employees) AS employees_count,
-        (SELECT COUNT(*) FROM tools) AS tools_count,
-        (SELECT COUNT(*) FROM withdrawals) AS withdrawals_count
-    `)
-    .get() as
-    | {
-        employees_count: number;
-        tools_count: number;
-        withdrawals_count: number;
-      }
-    | undefined;
+        (SELECT COUNT(*)::text FROM employees) AS employees_count,
+        (SELECT COUNT(*)::text FROM tools) AS tools_count,
+        (SELECT COUNT(*)::text FROM withdrawals) AS withdrawals_count
+    `
+  );
 
   const hasExistingData = Boolean(
     counts &&
-      (counts.employees_count > 0 || counts.tools_count > 0 || counts.withdrawals_count > 0)
+      (Number.parseInt(counts.employees_count, 10) > 0 ||
+        Number.parseInt(counts.tools_count, 10) > 0 ||
+        Number.parseInt(counts.withdrawals_count, 10) > 0)
   );
 
   if (!hasExistingData && fs.existsSync(LEGACY_DB_PATH)) {
     const raw = fs.readFileSync(LEGACY_DB_PATH, 'utf-8');
     const legacy = JSON.parse(raw) as Database;
-
-    runTransaction(db, () => {
-      const insertEmployee = db.prepare(`
-        INSERT INTO employees (id, name, role, badge, password, department, shift, photo_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      const insertTool = db.prepare(`
-        INSERT INTO tools (id, name, category, code, description, available, condition, location, photo_url)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      const insertWithdrawal = db.prepare(`
-        INSERT INTO withdrawals (
-          id,
-          tool_id,
-          employee_id,
-          withdrawn_at,
-          expected_return_at,
-          returned_at,
-          status,
-          cost_center,
-          notes
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-
-      for (const employee of legacy.employees) {
-        insertEmployee.run(
-          employee.id,
-          employee.name,
-          employee.role,
-          employee.badge,
-          employee.password,
-          employee.department,
-          employee.shift,
-          employee.photoUrl || null
-        );
-      }
-
-      for (const tool of legacy.tools) {
-        insertTool.run(
-          tool.id,
-          tool.name,
-          tool.category,
-          tool.code,
-          tool.description,
-          tool.available ? 1 : 0,
-          tool.condition,
-          tool.location,
-          tool.photoUrl || null
-        );
-      }
-
-      for (const withdrawal of legacy.withdrawals) {
-        insertWithdrawal.run(
-          withdrawal.id,
-          withdrawal.toolId,
-          withdrawal.employeeId,
-          withdrawal.withdrawnAt,
-          withdrawal.expectedReturnAt || null,
-          withdrawal.returnedAt || null,
-          withdrawal.status,
-          withdrawal.costCenter || null,
-          withdrawal.notes || null
-        );
-      }
-    });
+    await seedFromLegacy(legacy);
   }
 
-  db.prepare(`
-    INSERT OR REPLACE INTO app_meta (key, value)
-    VALUES ('initialized_at', ?)
-  `).run(new Date().toISOString());
+  await setMeta(db, 'initialized_at', new Date().toISOString());
+  await syncSupremeAdminIfNeeded(db);
+  await syncToolsCatalogIfNeeded(db);
 }
 
-function getMeta(db: DatabaseSync, key: string) {
-  const row = db.prepare(`SELECT value FROM app_meta WHERE key = ?`).get(key) as { value: string } | undefined;
-  return row?.value;
-}
-
-function setMeta(db: DatabaseSync, key: string, value: string) {
-  db.prepare(`INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)`).run(key, value);
-}
-
-function findAvailableBadge(db: DatabaseSync) {
-  const existsByBadge = db.prepare(`SELECT id FROM employees WHERE badge = ? LIMIT 1`);
-
-  for (let value = 100; value <= 999999; value += 1) {
-    const badge = String(value).padStart(3, '0');
-    const existing = existsByBadge.get(badge) as { id: string } | undefined;
-    if (!existing) {
-      return badge;
-    }
+async function ensureInitialized() {
+  if (initializationPromise) {
+    return initializationPromise;
   }
 
-  return `${Date.now()}`.slice(-6);
-}
-
-function syncToolsCatalogIfNeeded(db: DatabaseSync) {
-  const current = getMeta(db, 'tools_catalog_version');
-  if (current === TOOLS_CATALOG_VERSION) {
-    return;
-  }
-
-  if (!fs.existsSync(LEGACY_DB_PATH)) {
-    // No legacy JSON available: keep the existing tools as-is.
-    setMeta(db, 'tools_catalog_version', TOOLS_CATALOG_VERSION);
-    return;
-  }
-
-  const raw = fs.readFileSync(LEGACY_DB_PATH, 'utf-8');
-  const legacy = JSON.parse(raw) as Database;
-
-  // Only sync the "seed" tool ids (tool-002..tool-020). Tools created by admins usually have random ids,
-  // and we should not overwrite those.
-  const catalogTools = legacy.tools.filter((tool) => /^tool-0\d{2}$/.test(tool.id));
-
-  runTransaction(db, () => {
-    const selectTool = db.prepare(`SELECT id, code FROM tools WHERE id = ?`);
-    const selectCodeOwner = db.prepare(`SELECT id FROM tools WHERE code = ? LIMIT 1`);
-    const insertTool = db.prepare(`
-      INSERT INTO tools (id, name, category, code, description, available, condition, location, photo_url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    const updateTool = db.prepare(`
-      UPDATE tools
-      SET name = ?, category = ?, code = ?, description = ?, location = ?
-      WHERE id = ?
-    `);
-
-    for (const tool of catalogTools) {
-      const existing = selectTool.get(tool.id) as { id: string; code: string } | undefined;
-
-      if (!existing) {
-        insertTool.run(
-          tool.id,
-          tool.name,
-          tool.category,
-          tool.code,
-          tool.description,
-          tool.available ? 1 : 0,
-          tool.condition,
-          tool.location,
-          tool.photoUrl || null
-        );
-        continue;
-      }
-
-      // Avoid UNIQUE(code) conflicts if a code is already taken by another tool.
-      let nextCode = tool.code;
-      const codeOwner = selectCodeOwner.get(nextCode) as { id: string } | undefined;
-      if (codeOwner && codeOwner.id !== tool.id) {
-        nextCode = existing.code;
-      }
-
-      updateTool.run(tool.name, tool.category, nextCode, tool.description, tool.location, tool.id);
-    }
-
-    setMeta(db, 'tools_catalog_version', TOOLS_CATALOG_VERSION);
-  });
-}
-
-function syncSupremeAdminIfNeeded(db: DatabaseSync) {
-  const current = getMeta(db, 'supreme_admin_version');
-  if (current === SUPREME_ADMIN_VERSION) {
-    return;
-  }
-
-  runTransaction(db, () => {
-    const supremeById = db
-      .prepare(`SELECT id FROM employees WHERE id = ? LIMIT 1`)
-      .get(SUPREME_ADMIN_ID) as { id: string } | undefined;
-    const supremeByLegacyBadge = db
-      .prepare(`SELECT id FROM employees WHERE badge = '900' LIMIT 1`)
-      .get() as { id: string } | undefined;
-    const reservedHolder = db
-      .prepare(`SELECT id FROM employees WHERE badge = ? LIMIT 1`)
-      .get(SUPREME_ADMIN_BADGE) as { id: string } | undefined;
-
-    const promotedId = supremeById?.id || supremeByLegacyBadge?.id;
-
-    if (reservedHolder && promotedId && reservedHolder.id !== promotedId) {
-      const nextBadge = findAvailableBadge(db);
-      db.prepare(`UPDATE employees SET badge = ? WHERE id = ?`).run(nextBadge, reservedHolder.id);
-    }
-
-    const reservedAfterReassign = db
-      .prepare(`SELECT id FROM employees WHERE badge = ? LIMIT 1`)
-      .get(SUPREME_ADMIN_BADGE) as { id: string } | undefined;
-
-    const fallbackAdmin = db
-      .prepare(`SELECT id FROM employees ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, name ASC LIMIT 1`)
-      .get() as { id: string } | undefined;
-
-    const targetId = promotedId || reservedAfterReassign?.id || fallbackAdmin?.id;
-
-    if (targetId) {
-      db.prepare(`
-        UPDATE employees
-        SET badge = ?, role = 'admin'
-        WHERE id = ?
-      `).run(SUPREME_ADMIN_BADGE, targetId);
-    }
-
-    setMeta(db, 'supreme_admin_version', SUPREME_ADMIN_VERSION);
-  });
-}
-
-function runTransaction<T>(db: DatabaseSync, callback: () => T) {
-  db.exec('BEGIN IMMEDIATE');
-
-  try {
-    const result = callback();
-    db.exec('COMMIT');
-    return result;
-  } catch (error) {
-    db.exec('ROLLBACK');
+  initializationPromise = initializeDatabase().catch((error) => {
+    initializationPromise = null;
     throw error;
-  }
+  });
+
+  return initializationPromise;
 }
 
 function mapEmployee(row: EmployeeRow): Employee {
@@ -406,11 +442,17 @@ function mapTool(row: ToolRow): Tool {
     category: row.category,
     code: row.code,
     description: row.description,
-    available: Boolean(row.available),
+    available: row.available,
     condition: row.condition,
     location: row.location,
     photoUrl: row.photo_url || undefined,
   };
+}
+
+function timestampToString(value: string | Date | null) {
+  if (!value) return undefined;
+  if (value instanceof Date) return value.toISOString();
+  return value;
 }
 
 function mapWithdrawal(row: WithdrawalRow): Withdrawal {
@@ -418,240 +460,275 @@ function mapWithdrawal(row: WithdrawalRow): Withdrawal {
     id: row.id,
     toolId: row.tool_id,
     employeeId: row.employee_id,
-    withdrawnAt: row.withdrawn_at,
-    expectedReturnAt: row.expected_return_at || undefined,
-    returnedAt: row.returned_at || undefined,
+    withdrawnAt: timestampToString(row.withdrawn_at) || '',
+    expectedReturnAt: timestampToString(row.expected_return_at),
+    returnedAt: timestampToString(row.returned_at),
     status: row.status,
     costCenter: row.cost_center || undefined,
     notes: row.notes || '',
   };
 }
 
-export function getEmployees() {
-  const db = getConnection();
-  const rows = db.prepare(`SELECT * FROM employees ORDER BY name ASC`).all() as EmployeeRow[];
-  return rows.map(mapEmployee);
+export async function getEmployees() {
+  await ensureInitialized();
+  const db = getPool();
+  const result = await db.query<EmployeeRow>(`SELECT * FROM employees ORDER BY name ASC`);
+  return result.rows.map(mapEmployee);
 }
 
-export function getEmployeeById(id: string) {
-  const db = getConnection();
-  const row = db.prepare(`SELECT * FROM employees WHERE id = ?`).get(id) as EmployeeRow | undefined;
+export async function getEmployeeById(id: string) {
+  await ensureInitialized();
+  const db = getPool();
+  const row = await firstRow<EmployeeRow>(db, `SELECT * FROM employees WHERE id = $1`, [id]);
   return row ? mapEmployee(row) : null;
 }
 
-export function getEmployeeByBadgeAndPassword(badge: string, password: string) {
-  const db = getConnection();
-  const row = db
-    .prepare(`SELECT * FROM employees WHERE badge = ? AND password = ? LIMIT 1`)
-    .get(normalizeBadge(badge), password) as EmployeeRow | undefined;
+export async function getEmployeeByBadgeAndPassword(badge: string, password: string) {
+  await ensureInitialized();
+  const db = getPool();
+  const row = await firstRow<EmployeeRow>(
+    db,
+    `SELECT * FROM employees WHERE badge = $1 AND password = $2 LIMIT 1`,
+    [normalizeBadge(badge), password]
+  );
 
   return row ? mapEmployee(row) : null;
 }
 
-export function employeeBadgeExists(badge: string, excludeId?: string) {
-  const db = getConnection();
+export async function employeeBadgeExists(badge: string, excludeId?: string) {
+  await ensureInitialized();
+  const db = getPool();
   const normalizedBadge = normalizeBadge(badge);
 
   const row = excludeId
-    ? (db
-        .prepare(`SELECT id FROM employees WHERE badge = ? AND id != ? LIMIT 1`)
-        .get(normalizedBadge, excludeId) as { id: string } | undefined)
-    : (db
-        .prepare(`SELECT id FROM employees WHERE badge = ? LIMIT 1`)
-        .get(normalizedBadge) as { id: string } | undefined);
+    ? await firstRow<{ id: string }>(db, `SELECT id FROM employees WHERE badge = $1 AND id != $2 LIMIT 1`, [
+        normalizedBadge,
+        excludeId,
+      ])
+    : await firstRow<{ id: string }>(db, `SELECT id FROM employees WHERE badge = $1 LIMIT 1`, [normalizedBadge]);
 
   return Boolean(row);
 }
 
-export function createEmployee(employee: Employee) {
-  const db = getConnection();
+export async function createEmployee(employee: Employee) {
+  await ensureInitialized();
+  const db = getPool();
 
-  db.prepare(`
-    INSERT INTO employees (id, name, role, badge, password, department, shift, photo_url)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    employee.id,
-    employee.name,
-    employee.role,
-    employee.badge,
-    employee.password,
-    employee.department,
-    employee.shift,
-    employee.photoUrl || null
+  await db.query(
+    `
+      INSERT INTO employees (id, name, role, badge, password, department, shift, photo_url)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    `,
+    [
+      employee.id,
+      employee.name,
+      employee.role,
+      employee.badge,
+      employee.password,
+      employee.department,
+      employee.shift,
+      employee.photoUrl || null,
+    ]
   );
 
   return employee;
 }
 
-export function updateEmployee(employee: Employee) {
-  const db = getConnection();
-  const result = db.prepare(`
-    UPDATE employees
-    SET name = ?, role = ?, badge = ?, password = ?, department = ?, shift = ?, photo_url = ?
-    WHERE id = ?
-  `).run(
-    employee.name,
-    employee.role,
-    employee.badge,
-    employee.password,
-    employee.department,
-    employee.shift,
-    employee.photoUrl || null,
-    employee.id
+export async function updateEmployee(employee: Employee) {
+  await ensureInitialized();
+  const db = getPool();
+
+  const result = await db.query(
+    `
+      UPDATE employees
+      SET name = $1, role = $2, badge = $3, password = $4, department = $5, shift = $6, photo_url = $7
+      WHERE id = $8
+    `,
+    [
+      employee.name,
+      employee.role,
+      employee.badge,
+      employee.password,
+      employee.department,
+      employee.shift,
+      employee.photoUrl || null,
+      employee.id,
+    ]
   );
 
-  return result.changes > 0 ? employee : null;
+  return (result.rowCount ?? 0) > 0 ? employee : null;
 }
 
-export function deleteEmployeeById(id: string) {
-  const db = getConnection();
-  const result = db.prepare(`DELETE FROM employees WHERE id = ?`).run(id);
-  return result.changes > 0;
+export async function deleteEmployeeById(id: string) {
+  await ensureInitialized();
+  const db = getPool();
+  const result = await db.query(`DELETE FROM employees WHERE id = $1`, [id]);
+  return (result.rowCount ?? 0) > 0;
 }
 
-export function deleteWithdrawalsByEmployeeId(employeeId: string) {
-  const db = getConnection();
-  const result = db.prepare(`DELETE FROM withdrawals WHERE employee_id = ?`).run(employeeId);
-  return result.changes;
+export async function deleteWithdrawalsByEmployeeId(employeeId: string) {
+  await ensureInitialized();
+  const db = getPool();
+  const result = await db.query(`DELETE FROM withdrawals WHERE employee_id = $1`, [employeeId]);
+  return result.rowCount ?? 0;
 }
 
-export function hasActiveWithdrawalForEmployee(employeeId: string) {
-  const db = getConnection();
-  const row = db
-    .prepare(`SELECT id FROM withdrawals WHERE employee_id = ? AND status = 'active' LIMIT 1`)
-    .get(employeeId) as { id: string } | undefined;
+export async function hasActiveWithdrawalForEmployee(employeeId: string) {
+  await ensureInitialized();
+  const db = getPool();
+  const row = await firstRow<{ id: string }>(
+    db,
+    `SELECT id FROM withdrawals WHERE employee_id = $1 AND status = 'active' LIMIT 1`,
+    [employeeId]
+  );
 
   return Boolean(row);
 }
 
-export function getTools() {
-  const db = getConnection();
-  const rows = db.prepare(`SELECT * FROM tools ORDER BY name ASC`).all() as ToolRow[];
-  return rows.map(mapTool);
+export async function getTools() {
+  await ensureInitialized();
+  const db = getPool();
+  const result = await db.query<ToolRow>(`SELECT * FROM tools ORDER BY name ASC`);
+  return result.rows.map(mapTool);
 }
 
-export function getToolById(id: string) {
-  const db = getConnection();
-  const row = db.prepare(`SELECT * FROM tools WHERE id = ?`).get(id) as ToolRow | undefined;
+export async function getToolById(id: string) {
+  await ensureInitialized();
+  const db = getPool();
+  const row = await firstRow<ToolRow>(db, `SELECT * FROM tools WHERE id = $1`, [id]);
   return row ? mapTool(row) : null;
 }
 
-export function createTool(tool: Tool) {
-  const db = getConnection();
+export async function createTool(tool: Tool) {
+  await ensureInitialized();
+  const db = getPool();
 
-  db.prepare(`
-    INSERT INTO tools (id, name, category, code, description, available, condition, location, photo_url)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    tool.id,
-    tool.name,
-    tool.category,
-    tool.code,
-    tool.description,
-    tool.available ? 1 : 0,
-    tool.condition,
-    tool.location,
-    tool.photoUrl || null
+  await db.query(
+    `
+      INSERT INTO tools (id, name, category, code, description, available, condition, location, photo_url)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `,
+    [
+      tool.id,
+      tool.name,
+      tool.category,
+      tool.code,
+      tool.description,
+      tool.available,
+      tool.condition,
+      tool.location,
+      tool.photoUrl || null,
+    ]
   );
 
   return tool;
 }
 
-export function updateTool(tool: Tool) {
-  const db = getConnection();
-  const result = db.prepare(`
-    UPDATE tools
-    SET name = ?, category = ?, code = ?, description = ?, available = ?, condition = ?, location = ?, photo_url = ?
-    WHERE id = ?
-  `).run(
-    tool.name,
-    tool.category,
-    tool.code,
-    tool.description,
-    tool.available ? 1 : 0,
-    tool.condition,
-    tool.location,
-    tool.photoUrl || null,
-    tool.id
+export async function updateTool(tool: Tool) {
+  await ensureInitialized();
+  const db = getPool();
+  const result = await db.query(
+    `
+      UPDATE tools
+      SET name = $1, category = $2, code = $3, description = $4, available = $5, condition = $6, location = $7, photo_url = $8
+      WHERE id = $9
+    `,
+    [
+      tool.name,
+      tool.category,
+      tool.code,
+      tool.description,
+      tool.available,
+      tool.condition,
+      tool.location,
+      tool.photoUrl || null,
+      tool.id,
+    ]
   );
 
-  return result.changes > 0 ? tool : null;
+  return (result.rowCount ?? 0) > 0 ? tool : null;
 }
 
-export function deleteToolById(id: string) {
-  const db = getConnection();
-  const result = db.prepare(`DELETE FROM tools WHERE id = ?`).run(id);
-  return result.changes > 0;
+export async function deleteToolById(id: string) {
+  await ensureInitialized();
+  const db = getPool();
+  const result = await db.query(`DELETE FROM tools WHERE id = $1`, [id]);
+  return (result.rowCount ?? 0) > 0;
 }
 
-export function hasActiveWithdrawalForTool(toolId: string) {
-  const db = getConnection();
-  const row = db
-    .prepare(`SELECT id FROM withdrawals WHERE tool_id = ? AND status = 'active' LIMIT 1`)
-    .get(toolId) as { id: string } | undefined;
+export async function hasActiveWithdrawalForTool(toolId: string) {
+  await ensureInitialized();
+  const db = getPool();
+  const row = await firstRow<{ id: string }>(
+    db,
+    `SELECT id FROM withdrawals WHERE tool_id = $1 AND status = 'active' LIMIT 1`,
+    [toolId]
+  );
 
   return Boolean(row);
 }
 
-export function getWithdrawals() {
-  const db = getConnection();
-  const rows = db
-    .prepare(`SELECT * FROM withdrawals ORDER BY withdrawn_at DESC`)
-    .all() as WithdrawalRow[];
-
-  return rows.map(mapWithdrawal);
+export async function getWithdrawals() {
+  await ensureInitialized();
+  const db = getPool();
+  const result = await db.query<WithdrawalRow>(`SELECT * FROM withdrawals ORDER BY withdrawn_at DESC`);
+  return result.rows.map(mapWithdrawal);
 }
 
-export function getWithdrawalById(id: string) {
-  const db = getConnection();
-  const row = db.prepare(`SELECT * FROM withdrawals WHERE id = ?`).get(id) as WithdrawalRow | undefined;
+export async function getWithdrawalById(id: string) {
+  await ensureInitialized();
+  const db = getPool();
+  const row = await firstRow<WithdrawalRow>(db, `SELECT * FROM withdrawals WHERE id = $1`, [id]);
   return row ? mapWithdrawal(row) : null;
 }
 
-export function createWithdrawal(withdrawal: Withdrawal) {
-  const db = getConnection();
+export async function createWithdrawal(withdrawal: Withdrawal) {
+  await ensureInitialized();
 
-  return runTransaction(db, () => {
-    db.prepare(`
-      INSERT INTO withdrawals (
-        id,
-        tool_id,
-        employee_id,
-        withdrawn_at,
-        expected_return_at,
-        returned_at,
-        status,
-        cost_center,
-        notes
-      )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      withdrawal.id,
-      withdrawal.toolId,
-      withdrawal.employeeId,
-      withdrawal.withdrawnAt,
-      withdrawal.expectedReturnAt || null,
-      withdrawal.returnedAt || null,
-      withdrawal.status,
-      withdrawal.costCenter || null,
-      withdrawal.notes || null
+  return runTransaction(async (client) => {
+    await client.query(
+      `
+        INSERT INTO withdrawals (
+          id,
+          tool_id,
+          employee_id,
+          withdrawn_at,
+          expected_return_at,
+          returned_at,
+          status,
+          cost_center,
+          notes
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `,
+      [
+        withdrawal.id,
+        withdrawal.toolId,
+        withdrawal.employeeId,
+        withdrawal.withdrawnAt,
+        withdrawal.expectedReturnAt || null,
+        withdrawal.returnedAt || null,
+        withdrawal.status,
+        withdrawal.costCenter || null,
+        withdrawal.notes || null,
+      ]
     );
 
-    db.prepare(`UPDATE tools SET available = 0 WHERE id = ?`).run(withdrawal.toolId);
+    await client.query(`UPDATE tools SET available = FALSE WHERE id = $1`, [withdrawal.toolId]);
     return withdrawal;
   });
 }
 
-export function returnWithdrawal(
+export async function returnWithdrawal(
   withdrawalId: string,
   updates: { notes?: string; condition?: ToolCondition }
 ) {
-  const db = getConnection();
+  await ensureInitialized();
 
-  return runTransaction(db, () => {
-    const existingRow = db
-      .prepare(`SELECT * FROM withdrawals WHERE id = ?`)
-      .get(withdrawalId) as WithdrawalRow | undefined;
+  return runTransaction(async (client) => {
+    const existingRow = await firstRow<WithdrawalRow>(client, `SELECT * FROM withdrawals WHERE id = $1`, [
+      withdrawalId,
+    ]);
 
     if (!existingRow) {
       return null;
@@ -660,42 +737,52 @@ export function returnWithdrawal(
     const returnedAt = new Date().toISOString();
     const nextNotes = updates.notes !== undefined ? String(updates.notes) : existingRow.notes || '';
 
-    db.prepare(`
-      UPDATE withdrawals
-      SET status = 'returned', returned_at = ?, notes = ?
-      WHERE id = ?
-    `).run(returnedAt, nextNotes, withdrawalId);
+    await client.query(
+      `
+        UPDATE withdrawals
+        SET status = 'returned', returned_at = $1, notes = $2
+        WHERE id = $3
+      `,
+      [returnedAt, nextNotes, withdrawalId]
+    );
 
     if (updates.condition) {
-      db.prepare(`
-        UPDATE tools
-        SET available = 1, condition = ?
-        WHERE id = ?
-      `).run(updates.condition, existingRow.tool_id);
+      await client.query(
+        `
+          UPDATE tools
+          SET available = TRUE, condition = $1
+          WHERE id = $2
+        `,
+        [updates.condition, existingRow.tool_id]
+      );
     } else {
-      db.prepare(`
-        UPDATE tools
-        SET available = 1
-        WHERE id = ?
-      `).run(existingRow.tool_id);
+      await client.query(
+        `
+          UPDATE tools
+          SET available = TRUE
+          WHERE id = $1
+        `,
+        [existingRow.tool_id]
+      );
     }
 
-    const updatedRow = db
-      .prepare(`SELECT * FROM withdrawals WHERE id = ?`)
-      .get(withdrawalId) as WithdrawalRow;
+    const updatedRow = await firstRow<WithdrawalRow>(client, `SELECT * FROM withdrawals WHERE id = $1`, [
+      withdrawalId,
+    ]);
 
-    return mapWithdrawal(updatedRow);
+    return updatedRow ? mapWithdrawal(updatedRow) : null;
   });
 }
 
-export function getDatabaseSnapshot(): Database {
+export async function getDatabaseSnapshot(): Promise<Database> {
+  const [employees, tools, withdrawals] = await Promise.all([getEmployees(), getTools(), getWithdrawals()]);
   return {
-    employees: getEmployees(),
-    tools: getTools(),
-    withdrawals: getWithdrawals(),
+    employees,
+    tools,
+    withdrawals,
   };
 }
 
 export function getDatabasePath() {
-  return DB_PATH;
+  return DATABASE_URL || 'DATABASE_URL não configurada';
 }

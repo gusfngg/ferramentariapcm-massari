@@ -13,7 +13,7 @@ export const revalidate = 0;
 export async function GET() {
   try {
     return NextResponse.json(
-      getEmployees().filter((employee) => !isSupremeAdmin(employee)).map(sanitizeEmployee),
+      (await getEmployees()).filter((employee) => !isSupremeAdmin(employee)).map(sanitizeEmployee),
       {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Essa matrícula é reservada para o admin supremo.' }, { status: 400 });
     }
 
-    const hasDuplicateBadge = employeeBadgeExists(badge);
+    const hasDuplicateBadge = await employeeBadgeExists(badge);
     if (hasDuplicateBadge) {
       return NextResponse.json({ error: 'Já existe um funcionário com essa matrícula' }, { status: 400 });
     }
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
       photoUrl,
     };
 
-    createEmployee(newEmployee);
+    await createEmployee(newEmployee);
 
     return NextResponse.json(sanitizeEmployee(newEmployee), { status: 201 });
   } catch (caughtError) {

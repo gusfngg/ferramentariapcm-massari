@@ -9,7 +9,7 @@ const ALLOWED_CONDITIONS: Tool['condition'][] = ['good', 'fair', 'maintenance'];
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   try {
     const formData = await request.formData();
-    const tool = getToolById(params.id);
+    const tool = await getToolById(params.id);
 
     if (!tool) return NextResponse.json({ error: 'Ferramenta não encontrada' }, { status: 404 });
 
@@ -68,7 +68,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       location: locationInput !== null ? String(locationInput).trim() : tool.location,
       photoUrl: nextPhotoUrl,
     };
-    const savedTool = updateTool(nextTool);
+    const savedTool = await updateTool(nextTool);
 
     return NextResponse.json(savedTool || nextTool);
   } catch (caughtError) {
@@ -81,11 +81,11 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
 export async function DELETE(_: Request, { params }: { params: { id: string } }) {
   try {
-    const tool = getToolById(params.id);
+    const tool = await getToolById(params.id);
 
     if (!tool) return NextResponse.json({ error: 'Ferramenta não encontrada' }, { status: 404 });
 
-    const hasActive = hasActiveWithdrawalForTool(params.id);
+    const hasActive = await hasActiveWithdrawalForTool(params.id);
     if (hasActive) {
       return NextResponse.json(
         { error: 'Ferramenta está em uso. Aguarde a devolução.' },
@@ -94,7 +94,7 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
     }
 
     removeStoredImage(tool.photoUrl);
-    deleteToolById(params.id);
+    await deleteToolById(params.id);
 
     return NextResponse.json({ success: true });
   } catch {
