@@ -369,13 +369,7 @@ export default function HomePage() {
 
                         {profileMenuOpen && (
                           <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-20 max-h-72 overflow-y-auto rounded-2xl border border-brand-gray-border bg-white p-2 shadow-[0_24px_40px_-28px_rgba(10,10,10,0.35)]">
-                            {filteredProfiles.length === 0 && (
-                              <div className="rounded-xl px-3 py-4 text-sm text-gray-500">
-                                Nenhum perfil encontrado.
-                              </div>
-                            )}
-
-                            {filteredProfiles.map((profile) => (
+                        {filteredProfiles.map((profile) => (
                               <button
                                 key={profile.id}
                                 type="button"
