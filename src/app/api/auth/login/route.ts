@@ -19,7 +19,13 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json(sanitizeEmployee(employee));
-  } catch {
-    return NextResponse.json({ error: 'Erro ao realizar login' }, { status: 500 });
+  } catch (caughtError) {
+    console.error('Login API error:', caughtError);
+    return NextResponse.json(
+      {
+        error: caughtError instanceof Error ? caughtError.message : 'Erro ao realizar login',
+      },
+      { status: 500 }
+    );
   }
 }
