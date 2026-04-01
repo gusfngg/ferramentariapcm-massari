@@ -43,14 +43,32 @@ export default function DevolucaoPage() {
   const [error, setError] = useState('');
 
   const loadData = async () => {
-    const [emps, tls, wds] = await Promise.all([
-      fetch('/api/employees').then((r) => r.json()),
-      fetch('/api/tools').then((r) => r.json()),
-      fetch('/api/withdrawals').then((r) => r.json()),
-    ]);
-    setEmployees(emps);
-    setTools(tls);
-    setWithdrawals(wds);
+    try {
+      const [employeesResponse, toolsResponse, withdrawalsResponse] = await Promise.all([
+        fetch('/api/employees'),
+        fetch('/api/tools'),
+        fetch('/api/withdrawals'),
+      ]);
+
+      const [employeesPayload, toolsPayload, withdrawalsPayload] = await Promise.all([
+        employeesResponse.json(),
+        toolsResponse.json(),
+        withdrawalsResponse.json(),
+      ]);
+
+      setEmployees(Array.isArray(employeesPayload) ? employeesPayload : []);
+      setTools(Array.isArray(toolsPayload) ? toolsPayload : []);
+      setWithdrawals(Array.isArray(withdrawalsPayload) ? withdrawalsPayload : []);
+
+      if (!employeesResponse.ok || !toolsResponse.ok || !withdrawalsResponse.ok) {
+        setError('Falha ao carregar dados de devolução.');
+      }
+    } catch {
+      setEmployees([]);
+      setTools([]);
+      setWithdrawals([]);
+      setError('Erro de conexão ao carregar devoluções.');
+    }
   };
 
   useEffect(() => { loadData(); }, []);

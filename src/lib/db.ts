@@ -245,6 +245,20 @@ function setMeta(db: DatabaseSync, key: string, value: string) {
   db.prepare(`INSERT OR REPLACE INTO app_meta (key, value) VALUES (?, ?)`).run(key, value);
 }
 
+function findAvailableBadge(db: DatabaseSync) {
+  const existsByBadge = db.prepare(`SELECT id FROM employees WHERE badge = ? LIMIT 1`);
+
+  for (let value = 100; value <= 999999; value += 1) {
+    const badge = String(value).padStart(3, '0');
+    const existing = existsByBadge.get(badge) as { id: string } | undefined;
+    if (!existing) {
+      return badge;
+    }
+  }
+
+  return `${Date.now()}`.slice(-6);
+}
+
 function syncToolsCatalogIfNeeded(db: DatabaseSync) {
   const current = getMeta(db, 'tools_catalog_version');
   if (current === TOOLS_CATALOG_VERSION) {
@@ -317,29 +331,38 @@ function syncSupremeAdminIfNeeded(db: DatabaseSync) {
 
   runTransaction(db, () => {
     const supremeById = db
-      .prepare(`SELECT id FROM employees WHERE id = ?`)
+      .prepare(`SELECT id FROM employees WHERE id = ? LIMIT 1`)
       .get(SUPREME_ADMIN_ID) as { id: string } | undefined;
+    const supremeByLegacyBadge = db
+      .prepare(`SELECT id FROM employees WHERE badge = '900' LIMIT 1`)
+      .get() as { id: string } | undefined;
+    const reservedHolder = db
+      .prepare(`SELECT id FROM employees WHERE badge = ? LIMIT 1`)
+      .get(SUPREME_ADMIN_BADGE) as { id: string } | undefined;
 
-    const otherUsingReservedBadge = db
-      .prepare(`SELECT id FROM employees WHERE badge = ? AND id != ? LIMIT 1`)
-      .get(SUPREME_ADMIN_BADGE, SUPREME_ADMIN_ID) as { id: string } | undefined;
+    const promotedId = supremeById?.id || supremeByLegacyBadge?.id;
 
-    if (otherUsingReservedBadge) {
-      throw new Error('A matrícula reservada 000 já está em uso por outro funcionário.');
+    if (reservedHolder && promotedId && reservedHolder.id !== promotedId) {
+      const nextBadge = findAvailableBadge(db);
+      db.prepare(`UPDATE employees SET badge = ? WHERE id = ?`).run(nextBadge, reservedHolder.id);
     }
 
-    if (supremeById) {
+    const reservedAfterReassign = db
+      .prepare(`SELECT id FROM employees WHERE badge = ? LIMIT 1`)
+      .get(SUPREME_ADMIN_BADGE) as { id: string } | undefined;
+
+    const fallbackAdmin = db
+      .prepare(`SELECT id FROM employees ORDER BY CASE WHEN role = 'admin' THEN 0 ELSE 1 END, name ASC LIMIT 1`)
+      .get() as { id: string } | undefined;
+
+    const targetId = promotedId || reservedAfterReassign?.id || fallbackAdmin?.id;
+
+    if (targetId) {
       db.prepare(`
         UPDATE employees
         SET badge = ?, role = 'admin'
         WHERE id = ?
-      `).run(SUPREME_ADMIN_BADGE, SUPREME_ADMIN_ID);
-    } else {
-      db.prepare(`
-        UPDATE employees
-        SET id = ?, badge = ?, role = 'admin'
-        WHERE badge = '900'
-      `).run(SUPREME_ADMIN_ID, SUPREME_ADMIN_BADGE);
+      `).run(SUPREME_ADMIN_BADGE, targetId);
     }
 
     setMeta(db, 'supreme_admin_version', SUPREME_ADMIN_VERSION);

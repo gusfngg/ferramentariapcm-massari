@@ -42,17 +42,39 @@ export default function HistoricoPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'returned' | 'overdue' | 'pending'>('all');
   const [roleFilter, setRoleFilter] = useState<'all' | 'mechanic' | 'admin'>('all');
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/employees').then((r) => r.json()),
-      fetch('/api/tools').then((r) => r.json()),
-      fetch('/api/withdrawals').then((r) => r.json()),
-    ]).then(([emps, tls, wds]) => {
-      setEmployees(emps);
-      setTools(tls);
-      setWithdrawals(wds);
-    });
+    const loadData = async () => {
+      try {
+        const [employeesResponse, toolsResponse, withdrawalsResponse] = await Promise.all([
+          fetch('/api/employees'),
+          fetch('/api/tools'),
+          fetch('/api/withdrawals'),
+        ]);
+
+        const [employeesPayload, toolsPayload, withdrawalsPayload] = await Promise.all([
+          employeesResponse.json(),
+          toolsResponse.json(),
+          withdrawalsResponse.json(),
+        ]);
+
+        setEmployees(Array.isArray(employeesPayload) ? employeesPayload : []);
+        setTools(Array.isArray(toolsPayload) ? toolsPayload : []);
+        setWithdrawals(Array.isArray(withdrawalsPayload) ? withdrawalsPayload : []);
+
+        if (!employeesResponse.ok || !toolsResponse.ok || !withdrawalsResponse.ok) {
+          setLoadError('Falha ao carregar o histórico.');
+        }
+      } catch {
+        setEmployees([]);
+        setTools([]);
+        setWithdrawals([]);
+        setLoadError('Erro de conexão ao carregar o histórico.');
+      }
+    };
+
+    loadData();
   }, []);
 
   const getEmployee = (id: string) => employees.find((e) => e.id === id);
@@ -217,6 +239,12 @@ export default function HistoricoPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {loadError && (
+          <div className="mb-4 rounded-xl border border-red-100 bg-red-50 p-3">
+            <p className="text-brand-red text-sm font-medium">{loadError}</p>
+          </div>
+        )}
+
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-gray-300">
             <svg className="w-16 h-16 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

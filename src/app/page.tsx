@@ -70,15 +70,37 @@ export default function HomePage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/tools').then((response) => response.json()),
-      fetch('/api/employees').then((response) => response.json()),
-    ]).then(([toolList, employeeList]) => {
-      setTools(toolList);
-      setProfiles(
-        [...employeeList].sort((a: PublicEmployee, b: PublicEmployee) => a.name.localeCompare(b.name))
-      );
-    });
+    const loadInitialData = async () => {
+      try {
+        const [toolsResponse, employeesResponse] = await Promise.all([
+          fetch('/api/tools'),
+          fetch('/api/employees'),
+        ]);
+
+        const [toolsPayload, employeesPayload] = await Promise.all([
+          toolsResponse.json(),
+          employeesResponse.json(),
+        ]);
+
+        const nextTools = Array.isArray(toolsPayload) ? toolsPayload : [];
+        const nextEmployees = Array.isArray(employeesPayload) ? employeesPayload : [];
+
+        setTools(nextTools);
+        setProfiles(
+          [...nextEmployees].sort((a: PublicEmployee, b: PublicEmployee) => a.name.localeCompare(b.name))
+        );
+
+        if (!toolsResponse.ok || !employeesResponse.ok) {
+          setLoginError('Sistema em manutenção. Atualize a página em instantes.');
+        }
+      } catch {
+        setTools([]);
+        setProfiles([]);
+        setLoginError('Falha ao carregar dados da tela de login.');
+      }
+    };
+
+    loadInitialData();
   }, []);
 
   useEffect(() => {
@@ -222,8 +244,9 @@ export default function HomePage() {
         return;
       }
 
-      const updatedTools = await fetch('/api/tools').then((res) => res.json());
-      setTools(updatedTools);
+      const toolsResponse = await fetch('/api/tools');
+      const toolsPayload = await toolsResponse.json();
+      setTools(Array.isArray(toolsPayload) ? toolsPayload : []);
       setStep('success');
     } catch {
       setError('Erro de conexão. Tente novamente.');
