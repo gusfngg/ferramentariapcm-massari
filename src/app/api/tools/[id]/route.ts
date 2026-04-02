@@ -72,6 +72,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     return NextResponse.json(savedTool || nextTool);
   } catch (caughtError) {
+    console.error('Tools PUT error:', caughtError);
     if (caughtError instanceof UploadValidationError) {
       return NextResponse.json({ error: caughtError.message }, { status: 400 });
     }
@@ -97,7 +98,8 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
     await deleteToolById(params.id);
 
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (caughtError) {
+    console.error('Tools DELETE error:', caughtError);
     return NextResponse.json({ error: 'Erro ao remover ferramenta' }, { status: 500 });
   }
 }

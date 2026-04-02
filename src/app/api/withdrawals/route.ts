@@ -71,7 +71,18 @@ export async function POST(request: Request) {
     await createWithdrawal(newWithdrawal);
 
     return NextResponse.json(newWithdrawal, { status: 201 });
-  } catch {
+  } catch (caughtError) {
+    console.error('Withdrawals POST error:', caughtError);
+    const code = caughtError instanceof Error ? caughtError.message : '';
+    if (code === 'TOOL_NOT_FOUND') {
+      return NextResponse.json({ error: 'Ferramenta não encontrada' }, { status: 404 });
+    }
+    if (code === 'TOOL_UNAVAILABLE') {
+      return NextResponse.json({ error: 'Ferramenta indisponível' }, { status: 400 });
+    }
+    if (code === 'TOOL_MAINTENANCE') {
+      return NextResponse.json({ error: 'Ferramenta em manutenção' }, { status: 400 });
+    }
     return NextResponse.json({ error: 'Erro ao registrar retirada' }, { status: 500 });
   }
 }

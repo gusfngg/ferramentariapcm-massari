@@ -16,7 +16,8 @@ export async function GET() {
         'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
       },
     });
-  } catch {
+  } catch (caughtError) {
+    console.error('Tools GET error:', caughtError);
     return NextResponse.json({ error: 'Erro ao buscar ferramentas' }, { status: 500 });
   }
 }
@@ -65,6 +66,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(newTool, { status: 201 });
   } catch (caughtError) {
+    console.error('Tools POST error:', caughtError);
     if (caughtError instanceof UploadValidationError) {
       return NextResponse.json({ error: caughtError.message }, { status: 400 });
     }

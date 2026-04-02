@@ -102,6 +102,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
 
     return NextResponse.json(sanitizeEmployee(savedEmployee || nextEmployee));
   } catch (caughtError) {
+    console.error('Employees PUT error:', caughtError);
     if (caughtError instanceof UploadValidationError) {
       return NextResponse.json({ error: caughtError.message }, { status: 400 });
     }
@@ -126,13 +127,14 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
       );
     }
 
-    // Remove histórico para permitir exclusão física do funcionário no SQLite (FK RESTRICT).
+    // Remove histórico para permitir exclusão física do funcionário (FK RESTRICT).
     await deleteWithdrawalsByEmployeeId(params.id);
     removeStoredImage(employee.photoUrl);
     await deleteEmployeeById(params.id);
 
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (caughtError) {
+    console.error('Employees DELETE error:', caughtError);
     return NextResponse.json({ error: 'Erro ao remover funcionário' }, { status: 500 });
   }
 }

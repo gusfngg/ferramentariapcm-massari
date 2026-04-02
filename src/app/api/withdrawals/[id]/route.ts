@@ -21,7 +21,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     }
 
     return NextResponse.json(updatedWithdrawal);
-  } catch {
+  } catch (caughtError) {
+    console.error('Withdrawals PUT error:', caughtError);
     return NextResponse.json({ error: 'Erro ao registrar devolução' }, { status: 500 });
   }
 }

@@ -21,11 +21,18 @@ export async function POST(request: Request) {
     return NextResponse.json(sanitizeEmployee(employee));
   } catch (caughtError) {
     console.error('Login API error:', caughtError);
+
+    const message = caughtError instanceof Error ? caughtError.message : 'Erro ao realizar login';
+    const isDatabaseConfigError =
+      message.includes('DATABASE_URL') ||
+      message.includes('URL do banco inválida') ||
+      message.includes('Protocolo inválido');
+
     return NextResponse.json(
       {
-        error: caughtError instanceof Error ? caughtError.message : 'Erro ao realizar login',
+        error: message,
       },
-      { status: 500 }
+      { status: isDatabaseConfigError ? 503 : 500 }
     );
   }
 }

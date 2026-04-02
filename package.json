@@ -7,9 +7,11 @@
   },
   "scripts": {
     "dev": "NEXT_TELEMETRY_DISABLED=1 next dev",
+    "dev:clean": "rm -rf .next && NEXT_TELEMETRY_DISABLED=1 next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "clean": "rm -rf .next"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",

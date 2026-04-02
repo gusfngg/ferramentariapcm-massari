@@ -20,7 +20,8 @@ export async function GET() {
         },
       }
     );
-  } catch {
+  } catch (caughtError) {
+    console.error('Employees GET error:', caughtError);
     return NextResponse.json({ error: 'Erro ao buscar funcionários' }, { status: 500 });
   }
 }
@@ -85,6 +86,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(sanitizeEmployee(newEmployee), { status: 201 });
   } catch (caughtError) {
+    console.error('Employees POST error:', caughtError);
     if (caughtError instanceof UploadValidationError) {
       return NextResponse.json({ error: caughtError.message }, { status: 400 });
     }

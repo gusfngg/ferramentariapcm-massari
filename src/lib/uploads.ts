@@ -3,7 +3,8 @@ import path from 'path';
 
 const PUBLIC_DIR = path.resolve(process.cwd(), 'public');
 const UPLOADS_DIR = path.resolve(PUBLIC_DIR, 'uploads');
-const MAX_IMAGE_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024;
+const IMAGE_STORAGE_MODE = process.env.UPLOAD_STORAGE === 'filesystem' ? 'filesystem' : 'inline';
 
 const MIME_EXTENSION: Record<string, string> = {
   'image/jpeg': 'jpg',
@@ -31,7 +32,14 @@ export async function saveUploadedImage(file: File, section: 'employees' | 'tool
   }
 
   if (file.size > MAX_IMAGE_SIZE_BYTES) {
-    throw new UploadValidationError('A imagem deve ter no máximo 5MB.');
+    throw new UploadValidationError('A imagem deve ter no máximo 4MB.');
+  }
+
+  const fileBuffer = Buffer.from(await file.arrayBuffer());
+
+  if (IMAGE_STORAGE_MODE === 'inline') {
+    const mime = file.type || 'image/jpeg';
+    return `data:${mime};base64,${fileBuffer.toString('base64')}`;
   }
 
   const extension = getSafeExtension(file);
@@ -40,8 +48,6 @@ export async function saveUploadedImage(file: File, section: 'employees' | 'tool
   const absolutePath = path.resolve(directory, filename);
 
   fs.mkdirSync(directory, { recursive: true });
-
-  const fileBuffer = Buffer.from(await file.arrayBuffer());
   fs.writeFileSync(absolutePath, fileBuffer);
 
   return `/uploads/${section}/${filename}`;

@@ -13,15 +13,55 @@ import {
   WithdrawalStatus,
 } from '@/lib/types';
 
-const DATABASE_URL =
-  process.env.DATABASE_URL ||
-  process.env.POSTGRES_URL ||
-  process.env.POSTGRES_URL_NON_POOLING ||
-  process.env.POSTGRES_PRISMA_URL;
+type DatabaseConfig = {
+  url: string | null;
+  source: string | null;
+};
+
+function resolveDatabaseConfig(): DatabaseConfig {
+  const candidates: Array<{ key: string; value: string | undefined }> = [
+    { key: 'DATABASE_URL', value: process.env.DATABASE_URL },
+    { key: 'POSTGRES_URL', value: process.env.POSTGRES_URL },
+    { key: 'POSTGRES_URL_NON_POOLING', value: process.env.POSTGRES_URL_NON_POOLING },
+    { key: 'DATABASE_URL_UNPOOLED', value: process.env.DATABASE_URL_UNPOOLED },
+    { key: 'POSTGRES_PRISMA_URL', value: process.env.POSTGRES_PRISMA_URL },
+  ];
+
+  for (const candidate of candidates) {
+    const value = candidate.value?.trim();
+    if (value) {
+      return { url: value, source: candidate.key };
+    }
+  }
+
+  const host = process.env.PGHOST?.trim();
+  const user = process.env.PGUSER?.trim();
+  const password = process.env.PGPASSWORD?.trim();
+  const database = process.env.PGDATABASE?.trim();
+
+  if (host && user && password && database) {
+    const authUser = encodeURIComponent(user);
+    const authPassword = encodeURIComponent(password);
+    return {
+      url: `postgresql://${authUser}:${authPassword}@${host}/${database}?sslmode=require`,
+      source: 'PGHOST/PGUSER/PGPASSWORD/PGDATABASE',
+    };
+  }
+
+  return { url: null, source: null };
+}
+
+function isPlaceholderUrl(value: string) {
+  return /\b(HOST|USER|PASSWORD|DATABASE)\b/i.test(value);
+}
+
+const DATABASE_CONFIG = resolveDatabaseConfig();
+const DATABASE_URL = DATABASE_CONFIG.url;
 const LEGACY_DB_PATH = path.join(process.cwd(), 'data', 'db.json');
 const TOOLS_CATALOG_VERSION = 'mining-industrial-v1';
 const SUPREME_ADMIN_VERSION = 'supreme-admin-v1';
 const LEAN_BASELINE_VERSION = 'lean-baseline-v1';
+const ENABLE_LEAN_BASELINE = process.env.ENABLE_LEAN_BASELINE === '1';
 
 let pool: Pool | null = null;
 let initializationPromise: Promise<void> | null = null;
@@ -65,14 +105,52 @@ type Queryable = Pool | PoolClient;
 
 function getPool() {
   if (!DATABASE_URL) {
-    throw new Error('DATABASE_URL não configurada. Configure a URL do PostgreSQL para iniciar o sistema.');
+    throw new Error(
+      'DATABASE_URL não configurada. Defina DATABASE_URL (ou POSTGRES_URL) com a conexão PostgreSQL real no ambiente.'
+    );
+  }
+
+  if (isPlaceholderUrl(DATABASE_URL)) {
+    throw new Error(
+      `URL do banco inválida em ${DATABASE_CONFIG.source || 'env'}. Remova placeholders como HOST/USER/PASSWORD e use os dados reais do PostgreSQL.`
+    );
   }
 
   if (pool) {
     return pool;
   }
 
-  pool = new Pool({ connectionString: DATABASE_URL });
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(DATABASE_URL);
+  } catch {
+    throw new Error(
+      `URL do banco inválida em ${DATABASE_CONFIG.source || 'env'}. Verifique o formato: postgresql://usuario:senha@host:5432/banco`
+    );
+  }
+
+  if (!['postgresql:', 'postgres:'].includes(parsedUrl.protocol)) {
+    throw new Error(
+      `Protocolo inválido em ${DATABASE_CONFIG.source || 'env'} (${parsedUrl.protocol}). Use postgresql://`
+    );
+  }
+
+  const hostname = parsedUrl.hostname || '';
+  const isLocalDatabase = /localhost|127\.0\.0\.1/.test(hostname);
+  const requiresSsl = /sslmode=require/i.test(DATABASE_URL) || process.env.PGSSLMODE === 'require' || Boolean(process.env.VERCEL);
+
+  pool = new Pool({
+    connectionString: DATABASE_URL,
+    max: Number(process.env.PG_POOL_MAX || (process.env.NODE_ENV === 'production' ? 5 : 10)),
+    idleTimeoutMillis: Number(process.env.PG_IDLE_TIMEOUT_MS || 10000),
+    connectionTimeoutMillis: Number(process.env.PG_CONNECT_TIMEOUT_MS || 5000),
+    ssl: !isLocalDatabase && requiresSsl ? { rejectUnauthorized: false } : undefined,
+  });
+
+  pool.on('error', (error) => {
+    console.error('PostgreSQL pool error:', error);
+  });
+
   return pool;
 }
 
@@ -328,6 +406,10 @@ async function syncSupremeAdminIfNeeded(db: Queryable) {
 }
 
 async function enforceLeanBaselineIfNeeded(db: Queryable) {
+  if (!ENABLE_LEAN_BASELINE) {
+    return;
+  }
+
   const current = await getMeta(db, 'lean_baseline_version');
   if (current === LEAN_BASELINE_VERSION) {
     return;
@@ -768,6 +850,22 @@ export async function createWithdrawal(withdrawal: Withdrawal) {
   await ensureInitialized();
 
   return runTransaction(async (client) => {
+    const tool = await firstRow<{ id: string; available: boolean; condition: ToolCondition }>(
+      client,
+      `SELECT id, available, condition FROM tools WHERE id = $1 FOR UPDATE`,
+      [withdrawal.toolId]
+    );
+
+    if (!tool) {
+      throw new Error('TOOL_NOT_FOUND');
+    }
+    if (!tool.available) {
+      throw new Error('TOOL_UNAVAILABLE');
+    }
+    if (tool.condition === 'maintenance') {
+      throw new Error('TOOL_MAINTENANCE');
+    }
+
     await client.query(
       `
         INSERT INTO withdrawals (
@@ -866,5 +964,8 @@ export async function getDatabaseSnapshot(): Promise<Database> {
 }
 
 export function getDatabasePath() {
-  return DATABASE_URL || 'DATABASE_URL não configurada';
+  if (!DATABASE_URL) {
+    return 'DATABASE_URL não configurada';
+  }
+  return `${DATABASE_CONFIG.source || 'DATABASE_URL'} configurada`;
 }
