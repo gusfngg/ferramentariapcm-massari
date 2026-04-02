@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 const ALLOWED_ROLES: Employee['role'][] = ['mechanic', 'admin'];
 const ALLOWED_SHIFTS: Employee['shift'][] = ['A', 'B', 'C'];
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 

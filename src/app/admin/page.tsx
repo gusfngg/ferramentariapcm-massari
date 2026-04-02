@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { startTransition, useDeferredValue, useEffect, useState } from 'react';
 import clsx from 'clsx';
 import EmployeeForm from '@/components/admin/EmployeeForm';
 import EmployeesGrid from '@/components/admin/EmployeesGrid';
 import { classifyEmployeeSpecialty, EmployeeSpecialty } from '@/components/admin/helpers';
 import ToolForm from '@/components/admin/ToolForm';
 import ToolsTable from '@/components/admin/ToolsTable';
+import { Skeleton } from '@/components/ui/skeleton';
 import { EmployeeSaveInput, PublicEmployee, Tool, ToolSaveInput } from '@/lib/types';
 import {
   fetchAdminData,
@@ -17,6 +18,14 @@ import {
 } from '@/lib/services/admin';
 
 type AdminTab = 'tools' | 'employees';
+
+function sortToolsByName(items: Tool[]) {
+  return [...items].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function sortEmployeesByName(items: PublicEmployee[]) {
+  return [...items].sort((a, b) => a.name.localeCompare(b.name));
+}
 
 export default function AdminPage() {
   const [tab, setTab] = useState<AdminTab>('tools');
@@ -31,64 +40,123 @@ export default function AdminPage() {
   const [searchTools, setSearchTools] = useState('');
   const [searchEmployees, setSearchEmployees] = useState('');
   const [employeeSpecialtyFilter, setEmployeeSpecialtyFilter] = useState<'all' | EmployeeSpecialty>('all');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isMutating, setIsMutating] = useState(false);
+  const deferredToolSearch = useDeferredValue(searchTools);
+  const deferredEmployeeSearch = useDeferredValue(searchEmployees);
 
-  const loadData = async () => {
+  const loadData = async (showLoading = true) => {
+    if (showLoading) {
+      setIsLoading(true);
+    }
     try {
       const { tools: nextTools, employees: nextEmployees } = await fetchAdminData();
-      setTools(nextTools);
-      setEmployees(nextEmployees);
+      startTransition(() => {
+        setTools(sortToolsByName(nextTools));
+        setEmployees(sortEmployeesByName(nextEmployees));
+      });
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Erro ao carregar dados.');
+    } finally {
+      if (showLoading) {
+        setIsLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadData();
+    loadData(true);
   }, []);
 
   const handleSaveTool = async (data: ToolSaveInput) => {
-    await saveTool(data, editTool?.id);
-    setShowToolForm(false);
-    setEditTool(null);
-    await loadData();
+    try {
+      setIsMutating(true);
+      setError('');
+      const savedTool = await saveTool(data, editTool?.id);
+
+      startTransition(() => {
+        setTools((current) => {
+          const merged = editTool
+            ? current.map((tool) => (tool.id === savedTool.id ? savedTool : tool))
+            : [savedTool, ...current];
+          return sortToolsByName(merged);
+        });
+      });
+
+      setShowToolForm(false);
+      setEditTool(null);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Erro ao salvar ferramenta.');
+    } finally {
+      setIsMutating(false);
+    }
   };
 
   const handleDeleteTool = async (toolId: string) => {
     try {
+      setIsMutating(true);
+      setError('');
       await removeTool(toolId);
       setDeleteConfirm(null);
-      await loadData();
+      startTransition(() => {
+        setTools((current) => current.filter((tool) => tool.id !== toolId));
+      });
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Erro ao remover ferramenta.');
+    } finally {
+      setIsMutating(false);
     }
   };
 
   const handleSaveEmployee = async (data: EmployeeSaveInput) => {
-    await saveEmployee(data, editEmp?.id);
-    setShowEmpForm(false);
-    setEditEmp(null);
-    await loadData();
+    try {
+      setIsMutating(true);
+      setError('');
+      const savedEmployee = await saveEmployee(data, editEmp?.id);
+
+      startTransition(() => {
+        setEmployees((current) => {
+          const merged = editEmp
+            ? current.map((employee) => (employee.id === savedEmployee.id ? savedEmployee : employee))
+            : [savedEmployee, ...current];
+          return sortEmployeesByName(merged);
+        });
+      });
+
+      setShowEmpForm(false);
+      setEditEmp(null);
+    } catch (caughtError) {
+      setError(caughtError instanceof Error ? caughtError.message : 'Erro ao salvar funcionário.');
+    } finally {
+      setIsMutating(false);
+    }
   };
 
   const handleDeleteEmployee = async (employeeId: string) => {
     try {
+      setIsMutating(true);
+      setError('');
       await removeEmployee(employeeId);
       setDeleteConfirm(null);
-      await loadData();
+      startTransition(() => {
+        setEmployees((current) => current.filter((employee) => employee.id !== employeeId));
+      });
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Erro ao remover funcionário.');
+    } finally {
+      setIsMutating(false);
     }
   };
 
   const filteredTools = tools.filter((tool) => {
-    if (!searchTools) return true;
+    if (!deferredToolSearch) return true;
 
-    const query = searchTools.toLowerCase();
+    const query = deferredToolSearch.toLowerCase();
     return tool.name.toLowerCase().includes(query) || tool.code.toLowerCase().includes(query);
   });
 
   const filteredEmployees = employees.filter((employee) => {
-    const query = searchEmployees.toLowerCase().trim();
+    const query = deferredEmployeeSearch.toLowerCase().trim();
     const matchesSearch =
       !query || employee.name.toLowerCase().includes(query) || employee.badge.toLowerCase().includes(query);
     const matchesSpecialty =
@@ -170,7 +238,11 @@ export default function AdminPage() {
                   setShowToolForm(true);
                   setEditTool(null);
                 }}
-                className="btn-primary ml-4 rounded-lg px-5 py-2.5 text-sm"
+                disabled={isMutating}
+                className={clsx(
+                  'btn-primary ml-4 rounded-lg px-5 py-2.5 text-sm',
+                  isMutating && 'cursor-not-allowed opacity-70'
+                )}
                 style={{ fontFamily: "var(--font-display)" }}
               >
                 + NOVA FERRAMENTA
@@ -181,24 +253,28 @@ export default function AdminPage() {
               <ToolForm onSave={handleSaveTool} onCancel={() => setShowToolForm(false)} />
             )}
 
-            <ToolsTable
-              tools={filteredTools}
-              editTool={editTool}
-              showToolForm={showToolForm}
-              deleteConfirm={deleteConfirm}
-              onEdit={(tool) => {
-                setEditTool(tool);
-                setShowToolForm(true);
-              }}
-              onRequestDelete={(toolId) => setDeleteConfirm(toolId)}
-              onCancelDelete={() => setDeleteConfirm(null)}
-              onConfirmDelete={handleDeleteTool}
-              onCancelEdit={() => {
-                setEditTool(null);
-                setShowToolForm(false);
-              }}
-              onSaveEdit={handleSaveTool}
-            />
+            {isLoading ? (
+              <AdminToolsSkeleton />
+            ) : (
+              <ToolsTable
+                tools={filteredTools}
+                editTool={editTool}
+                showToolForm={showToolForm}
+                deleteConfirm={deleteConfirm}
+                onEdit={(tool) => {
+                  setEditTool(tool);
+                  setShowToolForm(true);
+                }}
+                onRequestDelete={(toolId) => setDeleteConfirm(toolId)}
+                onCancelDelete={() => setDeleteConfirm(null)}
+                onConfirmDelete={handleDeleteTool}
+                onCancelEdit={() => {
+                  setEditTool(null);
+                  setShowToolForm(false);
+                }}
+                onSaveEdit={handleSaveTool}
+              />
+            )}
           </div>
         )}
 
@@ -220,7 +296,11 @@ export default function AdminPage() {
                   setShowEmpForm(true);
                   setEditEmp(null);
                 }}
-                className="btn-primary ml-4 rounded-lg px-5 py-2.5 text-sm"
+                disabled={isMutating}
+                className={clsx(
+                  'btn-primary ml-4 rounded-lg px-5 py-2.5 text-sm',
+                  isMutating && 'cursor-not-allowed opacity-70'
+                )}
                 style={{ fontFamily: "var(--font-display)" }}
               >
                 + NOVO FUNCIONÁRIO
@@ -254,27 +334,68 @@ export default function AdminPage() {
               <EmployeeForm onSave={handleSaveEmployee} onCancel={() => setShowEmpForm(false)} />
             )}
 
-            <EmployeesGrid
-              employees={filteredEmployees}
-              editEmployee={editEmp}
-              showEmployeeForm={showEmpForm}
-              deleteConfirm={deleteConfirm}
-              onEdit={(employee) => {
-                setEditEmp(employee);
-                setShowEmpForm(true);
-              }}
-              onRequestDelete={(employeeId) => setDeleteConfirm(employeeId)}
-              onCancelDelete={() => setDeleteConfirm(null)}
-              onConfirmDelete={handleDeleteEmployee}
-              onCancelEdit={() => {
-                setEditEmp(null);
-                setShowEmpForm(false);
-              }}
-              onSaveEdit={handleSaveEmployee}
-            />
+            {isLoading ? (
+              <AdminEmployeesSkeleton />
+            ) : (
+              <EmployeesGrid
+                employees={filteredEmployees}
+                editEmployee={editEmp}
+                showEmployeeForm={showEmpForm}
+                deleteConfirm={deleteConfirm}
+                onEdit={(employee) => {
+                  setEditEmp(employee);
+                  setShowEmpForm(true);
+                }}
+                onRequestDelete={(employeeId) => setDeleteConfirm(employeeId)}
+                onCancelDelete={() => setDeleteConfirm(null)}
+                onConfirmDelete={handleDeleteEmployee}
+                onCancelEdit={() => {
+                  setEditEmp(null);
+                  setShowEmpForm(false);
+                }}
+                onSaveEdit={handleSaveEmployee}
+              />
+            )}
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function AdminToolsSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-brand-gray-border bg-white">
+      <div className="space-y-3 p-4">
+        <Skeleton className="h-8 w-full rounded-lg" />
+        <Skeleton className="h-8 w-full rounded-lg" />
+        <Skeleton className="h-8 w-full rounded-lg" />
+        <Skeleton className="h-8 w-full rounded-lg" />
+        <Skeleton className="h-8 w-full rounded-lg" />
+      </div>
+    </div>
+  );
+}
+
+function AdminEmployeesSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {Array.from({ length: 6 }).map((_, index) => (
+        <div key={index} className="rounded-2xl border border-brand-gray-border bg-white p-4">
+          <div className="mb-4 flex items-center gap-3">
+            <Skeleton className="h-10 w-10 rounded-xl" />
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-28" />
+              <Skeleton className="h-3 w-16" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-full" />
+            <Skeleton className="h-3 w-4/5" />
+            <Skeleton className="h-3 w-2/3" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 const ALLOWED_CATEGORIES: Tool['category'][] = ['hand', 'power', 'measuring', 'electrical', 'cutting'];
 const ALLOWED_CONDITIONS: Tool['condition'][] = ['good', 'fair', 'maintenance'];
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 

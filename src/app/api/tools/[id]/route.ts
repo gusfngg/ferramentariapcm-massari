@@ -5,6 +5,7 @@ import { removeStoredImage, saveUploadedImage, UploadValidationError } from '@/l
 
 const ALLOWED_CATEGORIES: Tool['category'][] = ['hand', 'power', 'measuring', 'electrical', 'cutting'];
 const ALLOWED_CONDITIONS: Tool['condition'][] = ['good', 'fair', 'maintenance'];
+export const runtime = 'nodejs';
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   try {

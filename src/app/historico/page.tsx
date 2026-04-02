@@ -1,9 +1,10 @@
 'use client';
 
 import Image from 'next/image';
-import { useState, useEffect } from 'react';
+import { startTransition, useDeferredValue, useEffect, useState } from 'react';
 import { PublicEmployee, Tool, Withdrawal } from '@/lib/types';
 import ToolIcon from '@/components/ToolIcon';
+import { Skeleton } from '@/components/ui/skeleton';
 import clsx from 'clsx';
 
 function getInitials(name: string) {
@@ -43,14 +44,19 @@ export default function HistoricoPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'returned' | 'overdue' | 'pending'>('all');
   const [roleFilter, setRoleFilter] = useState<'all' | 'mechanic' | 'admin'>('all');
   const [loadError, setLoadError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const deferredSearch = useDeferredValue(search);
 
   useEffect(() => {
-    const loadData = async () => {
+    const loadData = async (showSkeleton = false) => {
+      if (showSkeleton) {
+        setIsLoading(true);
+      }
       try {
         const [employeesResponse, toolsResponse, withdrawalsResponse] = await Promise.all([
-          fetch(`/api/employees?t=${Date.now()}`, { cache: 'no-store' }),
-          fetch(`/api/tools?t=${Date.now()}`, { cache: 'no-store' }),
-          fetch(`/api/withdrawals?t=${Date.now()}`, { cache: 'no-store' }),
+          fetch('/api/employees', { cache: 'no-store' }),
+          fetch('/api/tools', { cache: 'no-store' }),
+          fetch('/api/withdrawals', { cache: 'no-store' }),
         ]);
 
         const [employeesPayload, toolsPayload, withdrawalsPayload] = await Promise.all([
@@ -59,9 +65,11 @@ export default function HistoricoPage() {
           withdrawalsResponse.json(),
         ]);
 
-        setEmployees(Array.isArray(employeesPayload) ? employeesPayload : []);
-        setTools(Array.isArray(toolsPayload) ? toolsPayload : []);
-        setWithdrawals(Array.isArray(withdrawalsPayload) ? withdrawalsPayload : []);
+        startTransition(() => {
+          setEmployees(Array.isArray(employeesPayload) ? employeesPayload : []);
+          setTools(Array.isArray(toolsPayload) ? toolsPayload : []);
+          setWithdrawals(Array.isArray(withdrawalsPayload) ? withdrawalsPayload : []);
+        });
 
         if (!employeesResponse.ok || !toolsResponse.ok || !withdrawalsResponse.ok) {
           setLoadError('Falha ao carregar o histórico.');
@@ -71,11 +79,17 @@ export default function HistoricoPage() {
         setTools([]);
         setWithdrawals([]);
         setLoadError('Erro de conexão ao carregar o histórico.');
+      } finally {
+        if (showSkeleton) {
+          setIsLoading(false);
+        }
       }
     };
 
-    loadData();
-    const interval = window.setInterval(loadData, 4000);
+    loadData(true);
+    const interval = window.setInterval(() => {
+      loadData(false);
+    }, 4000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -89,12 +103,12 @@ export default function HistoricoPage() {
     if (!emp || !tool) return false;
 
     const matchSearch =
-      search === '' ||
-      emp.name.toLowerCase().includes(search.toLowerCase()) ||
-      tool.name.toLowerCase().includes(search.toLowerCase()) ||
-      tool.code.toLowerCase().includes(search.toLowerCase()) ||
-      emp.badge.toLowerCase().includes(search.toLowerCase()) ||
-      (wd.costCenter || '').toLowerCase().includes(search.toLowerCase());
+      deferredSearch === '' ||
+      emp.name.toLowerCase().includes(deferredSearch.toLowerCase()) ||
+      tool.name.toLowerCase().includes(deferredSearch.toLowerCase()) ||
+      tool.code.toLowerCase().includes(deferredSearch.toLowerCase()) ||
+      emp.badge.toLowerCase().includes(deferredSearch.toLowerCase()) ||
+      (wd.costCenter || '').toLowerCase().includes(deferredSearch.toLowerCase());
 
     const overdue = isOverdue(wd, now);
     const pending = wd.status === 'active' && !overdue;
@@ -247,7 +261,9 @@ export default function HistoricoPage() {
           </div>
         )}
 
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <HistoricoSkeleton />
+        ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-gray-300">
             <svg className="w-16 h-16 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -394,6 +410,18 @@ export default function HistoricoPage() {
             </p>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function HistoricoSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-2xl border border-brand-gray-border bg-white p-4">
+      <div className="space-y-3">
+        {Array.from({ length: 7 }).map((_, index) => (
+          <Skeleton key={index} className="h-10 w-full rounded-lg" />
+        ))}
       </div>
     </div>
   );

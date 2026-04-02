@@ -1,10 +1,11 @@
 'use client';
 
 import Image from 'next/image';
-import { useState, useEffect } from 'react';
+import { startTransition, useDeferredValue, useEffect, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { PublicEmployee, Tool, Withdrawal } from '@/lib/types';
 import ToolIcon from '@/components/ToolIcon';
+import { Skeleton } from '@/components/ui/skeleton';
 import clsx from 'clsx';
 
 function getInitials(name: string) {
@@ -41,13 +42,18 @@ export default function DevolucaoPage() {
   const [returning, setReturning] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const deferredSearch = useDeferredValue(search);
 
-  const loadData = async () => {
+  const loadData = async (showSkeleton = false) => {
+    if (showSkeleton) {
+      setIsLoading(true);
+    }
     try {
       const [employeesResponse, toolsResponse, withdrawalsResponse] = await Promise.all([
-        fetch(`/api/employees?t=${Date.now()}`, { cache: 'no-store' }),
-        fetch(`/api/tools?t=${Date.now()}`, { cache: 'no-store' }),
-        fetch(`/api/withdrawals?t=${Date.now()}`, { cache: 'no-store' }),
+        fetch('/api/employees', { cache: 'no-store' }),
+        fetch('/api/tools', { cache: 'no-store' }),
+        fetch('/api/withdrawals', { cache: 'no-store' }),
       ]);
 
       const [employeesPayload, toolsPayload, withdrawalsPayload] = await Promise.all([
@@ -56,9 +62,11 @@ export default function DevolucaoPage() {
         withdrawalsResponse.json(),
       ]);
 
-      setEmployees(Array.isArray(employeesPayload) ? employeesPayload : []);
-      setTools(Array.isArray(toolsPayload) ? toolsPayload : []);
-      setWithdrawals(Array.isArray(withdrawalsPayload) ? withdrawalsPayload : []);
+      startTransition(() => {
+        setEmployees(Array.isArray(employeesPayload) ? employeesPayload : []);
+        setTools(Array.isArray(toolsPayload) ? toolsPayload : []);
+        setWithdrawals(Array.isArray(withdrawalsPayload) ? withdrawalsPayload : []);
+      });
 
       if (!employeesResponse.ok || !toolsResponse.ok || !withdrawalsResponse.ok) {
         setError('Falha ao carregar dados de devolução.');
@@ -68,12 +76,18 @@ export default function DevolucaoPage() {
       setTools([]);
       setWithdrawals([]);
       setError('Erro de conexão ao carregar devoluções.');
+    } finally {
+      if (showSkeleton) {
+        setIsLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    loadData();
-    const interval = window.setInterval(loadData, 4000);
+    loadData(true);
+    const interval = window.setInterval(() => {
+      loadData(false);
+    }, 4000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -85,9 +99,9 @@ export default function DevolucaoPage() {
 
   const filteredEmployeesWithTools = employees.filter((emp) => {
     const hasActive = scopedWithdrawals.some((w) => w.employeeId === emp.id);
-    const matchSearch = search === '' ||
-      emp.name.toLowerCase().includes(search.toLowerCase()) ||
-      emp.badge.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = deferredSearch === '' ||
+      emp.name.toLowerCase().includes(deferredSearch.toLowerCase()) ||
+      emp.badge.toLowerCase().includes(deferredSearch.toLowerCase());
     return hasActive && matchSearch;
   });
 
@@ -114,8 +128,18 @@ export default function DevolucaoPage() {
         setError(data.error || 'Erro ao registrar devolução');
         return;
       }
+
       setSuccess(withdrawalId);
-      await loadData();
+      startTransition(() => {
+        setWithdrawals((current) =>
+          current.map((wd) =>
+            wd.id === withdrawalId
+              ? { ...wd, status: 'returned', returnedAt: new Date().toISOString() }
+              : wd
+          )
+        );
+      });
+      void loadData(false);
       setTimeout(() => setSuccess(null), 2000);
     } catch {
       setError('Erro de conexão. Tente novamente.');
@@ -183,7 +207,9 @@ export default function DevolucaoPage() {
           </div>
         )}
 
-        {filteredEmployeesWithTools.length === 0 ? (
+        {isLoading ? (
+          <DevolucaoSkeleton />
+        ) : filteredEmployeesWithTools.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 text-gray-300">
             <svg className="w-16 h-16 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -326,6 +352,28 @@ export default function DevolucaoPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function DevolucaoSkeleton() {
+  return (
+    <div className="space-y-4">
+      {Array.from({ length: 3 }).map((_, index) => (
+        <div key={index} className="rounded-2xl border border-brand-gray-border bg-white p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <Skeleton className="h-10 w-10 rounded-xl" />
+              <Skeleton className="h-4 w-44" />
+            </div>
+            <Skeleton className="h-6 w-24 rounded-full" />
+          </div>
+          <div className="space-y-3">
+            <Skeleton className="h-14 w-full rounded-xl" />
+            <Skeleton className="h-14 w-full rounded-xl" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

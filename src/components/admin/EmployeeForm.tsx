@@ -54,8 +54,8 @@ export default function EmployeeForm({ initial, onSave, onCancel }: EmployeeForm
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError('A imagem deve ter no máximo 5MB.');
+    if (file.size > 4 * 1024 * 1024) {
+      setError('A imagem deve ter no máximo 4MB.');
       return;
     }
 

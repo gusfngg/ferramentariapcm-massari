@@ -3,13 +3,14 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/components/auth/AuthProvider';
 import ToolIcon from '@/components/ToolIcon';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 import { SUPREME_ADMIN_BADGE } from '@/lib/auth';
 import { cn } from '@/lib/utils';
 import { PublicEmployee, Tool } from '@/lib/types';
@@ -69,13 +70,17 @@ export default function HomePage() {
   const [submitting, setSubmitting] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [error, setError] = useState('');
+  const [isBootLoading, setIsBootLoading] = useState(true);
+  const deferredToolSearch = useDeferredValue(searchTool);
+  const deferredProfileSearch = useDeferredValue(profileSearch);
 
   useEffect(() => {
     const loadInitialData = async () => {
+      setIsBootLoading(true);
       try {
         const [toolsResponse, employeesResponse] = await Promise.all([
-          fetch(`/api/tools?t=${Date.now()}`, { cache: 'no-store' }),
-          fetch(`/api/employees?t=${Date.now()}`, { cache: 'no-store' }),
+          fetch('/api/tools', { cache: 'no-store' }),
+          fetch('/api/employees', { cache: 'no-store' }),
         ]);
 
         const [toolsPayload, employeesPayload] = await Promise.all([
@@ -86,10 +91,12 @@ export default function HomePage() {
         const nextTools = Array.isArray(toolsPayload) ? toolsPayload : [];
         const nextEmployees = Array.isArray(employeesPayload) ? employeesPayload : [];
 
-        setTools(nextTools);
-        setProfiles(
-          [...nextEmployees].sort((a: PublicEmployee, b: PublicEmployee) => a.name.localeCompare(b.name))
-        );
+        startTransition(() => {
+          setTools(nextTools);
+          setProfiles(
+            [...nextEmployees].sort((a: PublicEmployee, b: PublicEmployee) => a.name.localeCompare(b.name))
+          );
+        });
 
         if (!toolsResponse.ok || !employeesResponse.ok) {
           setLoginError('Sistema em manutenção. Atualize a página em instantes.');
@@ -98,6 +105,8 @@ export default function HomePage() {
         setTools([]);
         setProfiles([]);
         setLoginError('Falha ao carregar dados da tela de login.');
+      } finally {
+        setIsBootLoading(false);
       }
     };
 
@@ -133,16 +142,16 @@ export default function HomePage() {
     () =>
       tools.filter(
         (tool) =>
-          (searchTool === '' ||
-            tool.name.toLowerCase().includes(searchTool.toLowerCase()) ||
-            tool.code.toLowerCase().includes(searchTool.toLowerCase()))
+          (deferredToolSearch === '' ||
+            tool.name.toLowerCase().includes(deferredToolSearch.toLowerCase()) ||
+            tool.code.toLowerCase().includes(deferredToolSearch.toLowerCase()))
       ).sort((a, b) => {
         const aDisabled = !a.available || a.condition === 'maintenance';
         const bDisabled = !b.available || b.condition === 'maintenance';
         if (aDisabled === bDisabled) return a.name.localeCompare(b.name);
         return aDisabled ? 1 : -1;
       }),
-    [searchTool, tools]
+    [deferredToolSearch, tools]
   );
 
   const getToolStatus = (tool: Tool) => {
@@ -159,15 +168,15 @@ export default function HomePage() {
   const filteredProfiles = useMemo(
     () =>
       profiles.filter((profile) => {
-        const query = profileSearch.trim().toLowerCase();
-        if (!query) return true;
+        const deferredQuery = deferredProfileSearch.trim().toLowerCase();
+        if (!deferredQuery) return true;
 
         return (
-          profile.name.toLowerCase().includes(query) ||
-          profile.badge.toLowerCase().includes(query)
+          profile.name.toLowerCase().includes(deferredQuery) ||
+          profile.badge.toLowerCase().includes(deferredQuery)
         );
       }),
-    [profileSearch, profiles]
+    [deferredProfileSearch, profiles]
   );
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
@@ -311,6 +320,12 @@ export default function HomePage() {
                   <form className="space-y-4" onSubmit={handleLogin}>
                     <div className="space-y-2">
                       <Label htmlFor="profile-picker">Perfil</Label>
+                      {isBootLoading ? (
+                        <div className="space-y-2">
+                          <Skeleton className="h-[58px] w-full rounded-2xl" />
+                          <Skeleton className="h-11 w-full rounded-2xl" />
+                        </div>
+                      ) : (
                       <div className="relative">
                         <div className="relative">
                           {selectedProfile && !profileMenuOpen && (
@@ -358,6 +373,7 @@ export default function HomePage() {
                               'h-[58px] rounded-2xl pr-12 text-base',
                               selectedProfile && !profileMenuOpen && 'pl-16'
                             )}
+                            disabled={isBootLoading}
                             autoComplete="off"
                           />
 
@@ -416,6 +432,7 @@ export default function HomePage() {
                           </div>
                         )}
                       </div>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -447,7 +464,7 @@ export default function HomePage() {
                     <Button
                       type="submit"
                       className="h-12 w-full rounded-2xl text-base font-semibold"
-                      disabled={loginLoading || badge.trim() === '' || password.length !== 6}
+                      disabled={isBootLoading || loginLoading || badge.trim() === '' || password.length !== 6}
                     >
                       {loginLoading ? 'Entrando...' : 'Entrar'}
                     </Button>
@@ -522,12 +539,29 @@ export default function HomePage() {
               </CardHeader>
               <CardContent className="px-5 pb-5 pt-0">
                 {visibleTools.length === 0 ? (
+                  isBootLoading ? (
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                      {Array.from({ length: 6 }).map((_, index) => (
+                        <div key={index} className="rounded-2xl border border-brand-gray-border bg-white p-4">
+                          <div className="flex items-start gap-3">
+                            <Skeleton className="h-12 w-12 rounded-2xl" />
+                            <div className="flex-1 space-y-2">
+                              <Skeleton className="h-4 w-28" />
+                              <Skeleton className="h-3 w-16" />
+                              <Skeleton className="h-3 w-20" />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
                   <div className="flex min-h-56 items-center justify-center rounded-3xl border border-dashed border-brand-gray-border bg-brand-gray-light/60 px-6 text-center">
                     <div>
                       <p className="text-lg font-semibold text-brand-black">Nenhuma ferramenta encontrada</p>
                       <p className="mt-2 text-sm text-gray-500">Tente outro nome ou código.</p>
                     </div>
                   </div>
+                  )
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                     {visibleTools.map((tool) => {

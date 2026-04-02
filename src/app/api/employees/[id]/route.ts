@@ -13,6 +13,7 @@ import { removeStoredImage, saveUploadedImage, UploadValidationError } from '@/l
 
 const ALLOWED_ROLES: Employee['role'][] = ['mechanic', 'admin'];
 const ALLOWED_SHIFTS: Employee['shift'][] = ['A', 'B', 'C'];
+export const runtime = 'nodejs';
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   try {

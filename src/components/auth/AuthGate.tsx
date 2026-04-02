@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { canAccessRoute } from '@/lib/access';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -24,8 +25,12 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   if (!isReady) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white">
-        <div className="rounded-2xl border border-brand-gray-border bg-white px-5 py-4 text-sm text-gray-500 shadow-sm">
-          Carregando...
+        <div className="w-full max-w-md rounded-2xl border border-brand-gray-border bg-white p-5 shadow-sm">
+          <div className="space-y-3">
+            <Skeleton className="h-5 w-1/2" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-10 w-full rounded-xl" />
+          </div>
         </div>
       </div>
     );

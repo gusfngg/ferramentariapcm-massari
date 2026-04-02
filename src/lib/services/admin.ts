@@ -10,7 +10,7 @@ async function parseError(response: Response, fallback: string) {
 }
 
 export async function fetchTools() {
-  const response = await fetch('/api/tools');
+  const response = await fetch('/api/tools', { cache: 'no-store' });
   if (!response.ok) {
     throw new Error(await parseError(response, 'Erro ao carregar ferramentas'));
   }
@@ -18,7 +18,7 @@ export async function fetchTools() {
 }
 
 export async function fetchEmployees() {
-  const response = await fetch('/api/employees');
+  const response = await fetch('/api/employees', { cache: 'no-store' });
   if (!response.ok) {
     throw new Error(await parseError(response, 'Erro ao carregar funcionários'));
   }
@@ -75,6 +75,8 @@ export async function saveTool(data: ToolSaveInput, toolId?: string) {
   if (!response.ok) {
     throw new Error(await parseError(response, 'Erro ao salvar ferramenta'));
   }
+
+  return (await response.json()) as Tool;
 }
 
 export async function removeTool(toolId: string) {
@@ -96,6 +98,8 @@ export async function saveEmployee(data: EmployeeSaveInput, employeeId?: string)
   if (!response.ok) {
     throw new Error(await parseError(response, 'Erro ao salvar funcionário'));
   }
+
+  return (await response.json()) as PublicEmployee;
 }
 
 export async function removeEmployee(employeeId: string) {
