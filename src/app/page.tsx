@@ -75,14 +75,10 @@ export default function HomePage() {
   const deferredToolSearch = useDeferredValue(searchTool);
   const deferredProfileSearch = useDeferredValue(profileSearch);
 
-  const toolsQuery = useQuery({
-    ...toolsQueryOptions,
-    refetchInterval: employee ? 4000 : false,
-  });
+  const toolsQuery = useQuery(toolsQueryOptions);
   const profilesQuery = useQuery({
     ...employeesQueryOptions,
     select: (items) => [...items].sort((a, b) => a.name.localeCompare(b.name)),
-    refetchInterval: employee ? false : 10_000,
   });
 
   const tools = toolsQuery.data ?? [];

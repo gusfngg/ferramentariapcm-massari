@@ -8,7 +8,7 @@ export const queryKeys = {
 };
 
 async function fetchJson<T>(input: string): Promise<T> {
-  const response = await fetch(input, { cache: 'no-store' });
+  const response = await fetch(input);
 
   if (!response.ok) {
     let message = `Erro ao carregar ${input}`;
@@ -29,14 +29,17 @@ async function fetchJson<T>(input: string): Promise<T> {
 export const employeesQueryOptions = queryOptions({
   queryKey: queryKeys.employees,
   queryFn: () => fetchJson<PublicEmployee[]>('/api/employees'),
+  staleTime: 5 * 60_000,
 });
 
 export const toolsQueryOptions = queryOptions({
   queryKey: queryKeys.tools,
   queryFn: () => fetchJson<Tool[]>('/api/tools'),
+  staleTime: 60_000,
 });
 
 export const withdrawalsQueryOptions = queryOptions({
   queryKey: queryKeys.withdrawals,
   queryFn: () => fetchJson<Withdrawal[]>('/api/withdrawals'),
+  staleTime: 30_000,
 });

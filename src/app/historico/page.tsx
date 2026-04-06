@@ -44,18 +44,9 @@ export default function HistoricoPage() {
   const [roleFilter, setRoleFilter] = useState<'all' | 'mechanic' | 'electrician' | 'admin'>('all');
   const deferredSearch = useDeferredValue(search);
 
-  const employeesQuery = useQuery({
-    ...employeesQueryOptions,
-    refetchInterval: 4000,
-  });
-  const toolsQuery = useQuery({
-    ...toolsQueryOptions,
-    refetchInterval: 4000,
-  });
-  const withdrawalsQuery = useQuery({
-    ...withdrawalsQueryOptions,
-    refetchInterval: 4000,
-  });
+  const employeesQuery = useQuery(employeesQueryOptions);
+  const toolsQuery = useQuery(toolsQueryOptions);
+  const withdrawalsQuery = useQuery(withdrawalsQueryOptions);
 
   const employees = employeesQuery.data ?? [];
   const tools = toolsQuery.data ?? [];
