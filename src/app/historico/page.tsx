@@ -1,10 +1,12 @@
 'use client';
 
 import Image from 'next/image';
-import { startTransition, useDeferredValue, useEffect, useState } from 'react';
-import { PublicEmployee, Tool, Withdrawal } from '@/lib/types';
+import { useDeferredValue, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Withdrawal } from '@/lib/types';
 import ToolIcon from '@/components/ToolIcon';
 import { Skeleton } from '@/components/ui/skeleton';
+import { employeesQueryOptions, toolsQueryOptions, withdrawalsQueryOptions } from '@/lib/query';
 import clsx from 'clsx';
 
 function getInitials(name: string) {
@@ -37,61 +39,33 @@ function isOverdue(withdrawal: Withdrawal, now = Date.now()) {
 }
 
 export default function HistoricoPage() {
-  const [employees, setEmployees] = useState<PublicEmployee[]>([]);
-  const [tools, setTools] = useState<Tool[]>([]);
-  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'returned' | 'overdue' | 'pending'>('all');
-  const [roleFilter, setRoleFilter] = useState<'all' | 'mechanic' | 'admin'>('all');
-  const [loadError, setLoadError] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+  const [roleFilter, setRoleFilter] = useState<'all' | 'mechanic' | 'electrician' | 'admin'>('all');
   const deferredSearch = useDeferredValue(search);
 
-  useEffect(() => {
-    const loadData = async (showSkeleton = false) => {
-      if (showSkeleton) {
-        setIsLoading(true);
-      }
-      try {
-        const [employeesResponse, toolsResponse, withdrawalsResponse] = await Promise.all([
-          fetch('/api/employees', { cache: 'no-store' }),
-          fetch('/api/tools', { cache: 'no-store' }),
-          fetch('/api/withdrawals', { cache: 'no-store' }),
-        ]);
+  const employeesQuery = useQuery({
+    ...employeesQueryOptions,
+    refetchInterval: 4000,
+  });
+  const toolsQuery = useQuery({
+    ...toolsQueryOptions,
+    refetchInterval: 4000,
+  });
+  const withdrawalsQuery = useQuery({
+    ...withdrawalsQueryOptions,
+    refetchInterval: 4000,
+  });
 
-        const [employeesPayload, toolsPayload, withdrawalsPayload] = await Promise.all([
-          employeesResponse.json(),
-          toolsResponse.json(),
-          withdrawalsResponse.json(),
-        ]);
-
-        startTransition(() => {
-          setEmployees(Array.isArray(employeesPayload) ? employeesPayload : []);
-          setTools(Array.isArray(toolsPayload) ? toolsPayload : []);
-          setWithdrawals(Array.isArray(withdrawalsPayload) ? withdrawalsPayload : []);
-        });
-
-        if (!employeesResponse.ok || !toolsResponse.ok || !withdrawalsResponse.ok) {
-          setLoadError('Falha ao carregar o histórico.');
-        }
-      } catch {
-        setEmployees([]);
-        setTools([]);
-        setWithdrawals([]);
-        setLoadError('Erro de conexão ao carregar o histórico.');
-      } finally {
-        if (showSkeleton) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    loadData(true);
-    const interval = window.setInterval(() => {
-      loadData(false);
-    }, 4000);
-    return () => window.clearInterval(interval);
-  }, []);
+  const employees = employeesQuery.data ?? [];
+  const tools = toolsQuery.data ?? [];
+  const withdrawals = withdrawalsQuery.data ?? [];
+  const isLoading = employeesQuery.isLoading || toolsQuery.isLoading || withdrawalsQuery.isLoading;
+  const loadError =
+    (employeesQuery.error instanceof Error && employeesQuery.error.message) ||
+    (toolsQuery.error instanceof Error && toolsQuery.error.message) ||
+    (withdrawalsQuery.error instanceof Error && withdrawalsQuery.error.message) ||
+    '';
 
   const getEmployee = (id: string) => employees.find((e) => e.id === id);
   const getTool = (id: string) => tools.find((t) => t.id === id);
@@ -234,7 +208,7 @@ export default function HistoricoPage() {
             </div>
 
             <div className="flex gap-1">
-              {(['all', 'mechanic', 'admin'] as const).map((r) => (
+              {(['all', 'mechanic', 'electrician', 'admin'] as const).map((r) => (
                 <button
                   key={r}
                   onClick={() => setRoleFilter(r)}
@@ -246,7 +220,7 @@ export default function HistoricoPage() {
                   )}
                   style={{ fontFamily: "var(--font-display)" }}
                 >
-                  {r === 'all' ? 'Todos' : r === 'mechanic' ? 'Mecânicos' : 'Admin'}
+                  {r === 'all' ? 'Todos' : r === 'mechanic' ? 'Mecânicos' : r === 'electrician' ? 'Eletricistas' : 'Admin'}
                 </button>
               ))}
             </div>

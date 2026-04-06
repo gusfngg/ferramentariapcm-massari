@@ -176,10 +176,13 @@ export default function EmployeeForm({ initial, onSave, onCancel }: EmployeeForm
           <label className="mb-1 block font-mono text-xs uppercase tracking-wider text-gray-500">Cargo</label>
           <select
             value={form.role}
-            onChange={(event) => setForm({ ...form, role: event.target.value as 'mechanic' | 'admin' })}
+            onChange={(event) =>
+              setForm({ ...form, role: event.target.value as 'mechanic' | 'electrician' | 'admin' })
+            }
             className="w-full border-2 border-brand-gray-border bg-white px-3 py-2.5 font-mono text-sm focus:border-brand-red focus:outline-none"
           >
             <option value="mechanic">Mecânico</option>
+            <option value="electrician">Eletricista</option>
             <option value="admin">Admin</option>
           </select>
         </div>

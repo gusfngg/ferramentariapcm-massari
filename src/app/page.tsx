@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { FormEvent, startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/auth/AuthProvider';
 import ToolIcon from '@/components/ToolIcon';
 import { Button } from '@/components/ui/button';
@@ -12,11 +13,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SUPREME_ADMIN_BADGE } from '@/lib/auth';
+import { employeesQueryOptions, queryKeys, toolsQueryOptions } from '@/lib/query';
 import { cn } from '@/lib/utils';
 import { PublicEmployee, Tool } from '@/lib/types';
 
 const ROLE_LABEL: Record<string, string> = {
   mechanic: 'Mecânico',
+  electrician: 'Eletricista',
   admin: 'Admin',
 };
 
@@ -52,10 +55,9 @@ function getInitials(name: string) {
 }
 
 export default function HomePage() {
+  const queryClient = useQueryClient();
   const router = useRouter();
   const { employee, login, isReady, wasTimedOut } = useAuth();
-  const [profiles, setProfiles] = useState<PublicEmployee[]>([]);
-  const [tools, setTools] = useState<Tool[]>([]);
   const [step, setStep] = useState<Step>('tool');
   const [selectedTool, setSelectedTool] = useState<Tool | null>(null);
   const [expectedReturnTime, setExpectedReturnTime] = useState('');
@@ -70,48 +72,26 @@ export default function HomePage() {
   const [submitting, setSubmitting] = useState(false);
   const [loginError, setLoginError] = useState('');
   const [error, setError] = useState('');
-  const [isBootLoading, setIsBootLoading] = useState(true);
   const deferredToolSearch = useDeferredValue(searchTool);
   const deferredProfileSearch = useDeferredValue(profileSearch);
 
-  useEffect(() => {
-    const loadInitialData = async () => {
-      setIsBootLoading(true);
-      try {
-        const [toolsResponse, employeesResponse] = await Promise.all([
-          fetch('/api/tools', { cache: 'no-store' }),
-          fetch('/api/employees', { cache: 'no-store' }),
-        ]);
+  const toolsQuery = useQuery({
+    ...toolsQueryOptions,
+    refetchInterval: employee ? 4000 : false,
+  });
+  const profilesQuery = useQuery({
+    ...employeesQueryOptions,
+    select: (items) => [...items].sort((a, b) => a.name.localeCompare(b.name)),
+    refetchInterval: employee ? false : 10_000,
+  });
 
-        const [toolsPayload, employeesPayload] = await Promise.all([
-          toolsResponse.json(),
-          employeesResponse.json(),
-        ]);
-
-        const nextTools = Array.isArray(toolsPayload) ? toolsPayload : [];
-        const nextEmployees = Array.isArray(employeesPayload) ? employeesPayload : [];
-
-        startTransition(() => {
-          setTools(nextTools);
-          setProfiles(
-            [...nextEmployees].sort((a: PublicEmployee, b: PublicEmployee) => a.name.localeCompare(b.name))
-          );
-        });
-
-        if (!toolsResponse.ok || !employeesResponse.ok) {
-          setLoginError('Sistema em manutenção. Atualize a página em instantes.');
-        }
-      } catch {
-        setTools([]);
-        setProfiles([]);
-        setLoginError('Falha ao carregar dados da tela de login.');
-      } finally {
-        setIsBootLoading(false);
-      }
-    };
-
-    loadInitialData();
-  }, []);
+  const tools = toolsQuery.data ?? [];
+  const profiles = profilesQuery.data ?? [];
+  const queryError =
+    (toolsQuery.error instanceof Error && toolsQuery.error.message) ||
+    (profilesQuery.error instanceof Error && profilesQuery.error.message) ||
+    '';
+  const isBootLoading = toolsQuery.isLoading || profilesQuery.isLoading;
 
   useEffect(() => {
     if (!employee) {
@@ -260,10 +240,11 @@ export default function HomePage() {
         setError(result.error || 'Erro ao registrar retirada.');
         return;
       }
-
-      const toolsResponse = await fetch(`/api/tools?t=${Date.now()}`, { cache: 'no-store' });
-      const toolsPayload = await toolsResponse.json();
-      setTools(Array.isArray(toolsPayload) ? toolsPayload : []);
+      queryClient.setQueryData<Tool[]>(queryKeys.tools, (current = []) =>
+        current.map((tool) => (tool.id === selectedTool.id ? { ...tool, available: false } : tool))
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tools });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.withdrawals });
       setStep('success');
     } catch {
       setError('Erro de conexão. Tente novamente.');
@@ -455,9 +436,9 @@ export default function HomePage() {
                       </div>
                     )}
 
-                    {loginError && (
+                    {(loginError || queryError) && (
                       <div className="rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-brand-red">
-                        {loginError}
+                        {loginError || queryError}
                       </div>
                     )}
 

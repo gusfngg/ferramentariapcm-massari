@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import {
   deleteWithdrawalsByEmployeeId,
   deleteEmployeeById,
@@ -11,7 +12,7 @@ import { Employee } from '@/lib/types';
 import { isSupremeAdmin, isValidBadge, isValidPin, sanitizeEmployee, SUPREME_ADMIN_BADGE } from '@/lib/auth';
 import { removeStoredImage, saveUploadedImage, UploadValidationError } from '@/lib/uploads';
 
-const ALLOWED_ROLES: Employee['role'][] = ['mechanic', 'admin'];
+const ALLOWED_ROLES: Employee['role'][] = ['mechanic', 'electrician', 'admin'];
 const ALLOWED_SHIFTS: Employee['shift'][] = ['A', 'B', 'C'];
 export const runtime = 'nodejs';
 
@@ -100,6 +101,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     };
 
     const savedEmployee = await updateEmployee(nextEmployee);
+    revalidateTag('employees');
 
     return NextResponse.json(sanitizeEmployee(savedEmployee || nextEmployee));
   } catch (caughtError) {
@@ -132,6 +134,8 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
     await deleteWithdrawalsByEmployeeId(params.id);
     removeStoredImage(employee.photoUrl);
     await deleteEmployeeById(params.id);
+    revalidateTag('employees');
+    revalidateTag('withdrawals');
 
     return NextResponse.json({ success: true });
   } catch (caughtError) {

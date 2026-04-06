@@ -1,13 +1,16 @@
 import { NextResponse } from 'next/server';
-import { createWithdrawal, getEmployeeById, getToolById, getWithdrawals } from '@/lib/db';
+import { revalidateTag } from 'next/cache';
+import { createWithdrawal, getEmployeeById, getToolById } from '@/lib/db';
+import { readCachedWithdrawals } from '@/lib/db-cache';
 import { Withdrawal } from '@/lib/types';
 import { v4 as uuidv4 } from 'uuid';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+export const runtime = 'nodejs';
 
 export async function GET() {
   try {
-    return NextResponse.json(await getWithdrawals(), {
+    return NextResponse.json(await readCachedWithdrawals(), {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
       },
@@ -69,6 +72,8 @@ export async function POST(request: Request) {
     };
 
     await createWithdrawal(newWithdrawal);
+    revalidateTag('withdrawals');
+    revalidateTag('tools');
 
     return NextResponse.json(newWithdrawal, { status: 201 });
   } catch (caughtError) {

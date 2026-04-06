@@ -1,6 +1,7 @@
 'use client';
 
-import { startTransition, useDeferredValue, useEffect, useState } from 'react';
+import { startTransition, useDeferredValue, useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import EmployeeForm from '@/components/admin/EmployeeForm';
 import EmployeesGrid from '@/components/admin/EmployeesGrid';
@@ -9,13 +10,8 @@ import ToolForm from '@/components/admin/ToolForm';
 import ToolsTable from '@/components/admin/ToolsTable';
 import { Skeleton } from '@/components/ui/skeleton';
 import { EmployeeSaveInput, PublicEmployee, Tool, ToolSaveInput } from '@/lib/types';
-import {
-  fetchAdminData,
-  removeEmployee,
-  removeTool,
-  saveEmployee,
-  saveTool,
-} from '@/lib/services/admin';
+import { employeesQueryOptions, queryKeys, toolsQueryOptions } from '@/lib/query';
+import { removeEmployee, removeTool, saveEmployee, saveTool } from '@/lib/services/admin';
 
 type AdminTab = 'tools' | 'employees';
 
@@ -28,9 +24,8 @@ function sortEmployeesByName(items: PublicEmployee[]) {
 }
 
 export default function AdminPage() {
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<AdminTab>('tools');
-  const [tools, setTools] = useState<Tool[]>([]);
-  const [employees, setEmployees] = useState<PublicEmployee[]>([]);
   const [showToolForm, setShowToolForm] = useState(false);
   const [editTool, setEditTool] = useState<Tool | null>(null);
   const [showEmpForm, setShowEmpForm] = useState(false);
@@ -40,33 +35,28 @@ export default function AdminPage() {
   const [searchTools, setSearchTools] = useState('');
   const [searchEmployees, setSearchEmployees] = useState('');
   const [employeeSpecialtyFilter, setEmployeeSpecialtyFilter] = useState<'all' | EmployeeSpecialty>('all');
-  const [isLoading, setIsLoading] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
   const deferredToolSearch = useDeferredValue(searchTools);
   const deferredEmployeeSearch = useDeferredValue(searchEmployees);
 
-  const loadData = async (showLoading = true) => {
-    if (showLoading) {
-      setIsLoading(true);
-    }
-    try {
-      const { tools: nextTools, employees: nextEmployees } = await fetchAdminData();
-      startTransition(() => {
-        setTools(sortToolsByName(nextTools));
-        setEmployees(sortEmployeesByName(nextEmployees));
-      });
-    } catch (caughtError) {
-      setError(caughtError instanceof Error ? caughtError.message : 'Erro ao carregar dados.');
-    } finally {
-      if (showLoading) {
-        setIsLoading(false);
-      }
-    }
-  };
+  const toolsQuery = useQuery({
+    ...toolsQueryOptions,
+    select: (items) => sortToolsByName(items),
+  });
 
-  useEffect(() => {
-    loadData(true);
-  }, []);
+  const employeesQuery = useQuery({
+    ...employeesQueryOptions,
+    select: (items) => sortEmployeesByName(items),
+  });
+
+  const tools = toolsQuery.data ?? [];
+  const employees = employeesQuery.data ?? [];
+  const isLoading = toolsQuery.isLoading || employeesQuery.isLoading;
+  const queryError = useMemo(() => {
+    if (toolsQuery.error instanceof Error) return toolsQuery.error.message;
+    if (employeesQuery.error instanceof Error) return employeesQuery.error.message;
+    return '';
+  }, [employeesQuery.error, toolsQuery.error]);
 
   const handleSaveTool = async (data: ToolSaveInput) => {
     try {
@@ -75,13 +65,14 @@ export default function AdminPage() {
       const savedTool = await saveTool(data, editTool?.id);
 
       startTransition(() => {
-        setTools((current) => {
+        queryClient.setQueryData<Tool[]>(queryKeys.tools, (current = []) => {
           const merged = editTool
             ? current.map((tool) => (tool.id === savedTool.id ? savedTool : tool))
             : [savedTool, ...current];
           return sortToolsByName(merged);
         });
       });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tools });
 
       setShowToolForm(false);
       setEditTool(null);
@@ -99,8 +90,11 @@ export default function AdminPage() {
       await removeTool(toolId);
       setDeleteConfirm(null);
       startTransition(() => {
-        setTools((current) => current.filter((tool) => tool.id !== toolId));
+        queryClient.setQueryData<Tool[]>(queryKeys.tools, (current = []) =>
+          current.filter((tool) => tool.id !== toolId)
+        );
       });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tools });
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Erro ao remover ferramenta.');
     } finally {
@@ -115,13 +109,14 @@ export default function AdminPage() {
       const savedEmployee = await saveEmployee(data, editEmp?.id);
 
       startTransition(() => {
-        setEmployees((current) => {
+        queryClient.setQueryData<PublicEmployee[]>(queryKeys.employees, (current = []) => {
           const merged = editEmp
             ? current.map((employee) => (employee.id === savedEmployee.id ? savedEmployee : employee))
             : [savedEmployee, ...current];
           return sortEmployeesByName(merged);
         });
       });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.employees });
 
       setShowEmpForm(false);
       setEditEmp(null);
@@ -139,8 +134,11 @@ export default function AdminPage() {
       await removeEmployee(employeeId);
       setDeleteConfirm(null);
       startTransition(() => {
-        setEmployees((current) => current.filter((employee) => employee.id !== employeeId));
+        queryClient.setQueryData<PublicEmployee[]>(queryKeys.employees, (current = []) =>
+          current.filter((employee) => employee.id !== employeeId)
+        );
       });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.employees });
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : 'Erro ao remover funcionário.');
     } finally {
@@ -203,9 +201,9 @@ export default function AdminPage() {
           ))}
         </div>
 
-        {error && (
+        {(error || queryError) && (
           <div className="mb-4 flex items-center justify-between border-l-4 border-brand-red bg-red-50 p-3">
-            <p className="text-sm font-medium text-brand-red">{error}</p>
+            <p className="text-sm font-medium text-brand-red">{error || queryError}</p>
             <button onClick={() => setError('')} className="text-lg text-brand-red hover:text-brand-red-dark">
               ×
             </button>

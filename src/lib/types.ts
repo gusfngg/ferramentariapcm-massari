@@ -1,4 +1,4 @@
-export type EmployeeRole = 'mechanic' | 'admin';
+export type EmployeeRole = 'mechanic' | 'electrician' | 'admin';
 export type ToolCondition = 'good' | 'fair' | 'maintenance';
 export type WithdrawalStatus = 'active' | 'returned';
 export type ToolCategory = 'hand' | 'power' | 'measuring' | 'electrical' | 'cutting';

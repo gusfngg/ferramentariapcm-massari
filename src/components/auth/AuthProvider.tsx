@@ -10,7 +10,7 @@ import {
 } from 'react';
 import { isSupremeAdmin } from '@/lib/auth';
 import { PublicEmployee } from '@/lib/types';
-import { INACTIVITY_TIMEOUT_MS, SESSION_KEY } from '@/lib/session';
+import { INACTIVITY_TIMEOUT_MS } from '@/lib/session';
 
 type AuthContextValue = {
   employee: PublicEmployee | null;
@@ -28,16 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [wasTimedOut, setWasTimedOut] = useState(false);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(SESSION_KEY);
-
-    if (stored) {
-      try {
-        setEmployee(JSON.parse(stored) as PublicEmployee);
-      } catch {
-        window.localStorage.removeItem(SESSION_KEY);
-      }
-    }
-
+    // Sessão somente em memória da aba atual (sem persistência).
     setIsReady(true);
   }, []);
 
@@ -58,7 +49,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       timeoutId = window.setTimeout(() => {
         setEmployee(null);
         setWasTimedOut(true);
-        window.localStorage.removeItem(SESSION_KEY);
       }, INACTIVITY_TIMEOUT_MS);
     };
 
@@ -90,7 +80,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!stillExists && !isDisposed) {
           setEmployee(null);
           setWasTimedOut(false);
-          window.localStorage.removeItem(SESSION_KEY);
         }
       } catch {
         // Ignore transient failures; next validation attempt will retry.
@@ -114,12 +103,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login: (nextEmployee) => {
         setEmployee(nextEmployee);
         setWasTimedOut(false);
-        window.localStorage.setItem(SESSION_KEY, JSON.stringify(nextEmployee));
       },
       logout: () => {
         setEmployee(null);
         setWasTimedOut(false);
-        window.localStorage.removeItem(SESSION_KEY);
       },
     }),
     [employee, isReady, wasTimedOut]

@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { getWithdrawalById, returnWithdrawal } from '@/lib/db';
+export const runtime = 'nodejs';
 
 export async function PUT(request: Request, { params }: { params: { id: string } }) {
   try {
@@ -19,6 +21,8 @@ export async function PUT(request: Request, { params }: { params: { id: string }
     if (!updatedWithdrawal) {
       return NextResponse.json({ error: 'Retirada não encontrada' }, { status: 404 });
     }
+    revalidateTag('withdrawals');
+    revalidateTag('tools');
 
     return NextResponse.json(updatedWithdrawal);
   } catch (caughtError) {

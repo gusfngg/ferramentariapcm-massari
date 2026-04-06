@@ -16,5 +16,6 @@ export const CONDITION_OPTIONS: { value: ToolCondition; label: string }[] = [
 
 export const ROLE_LABEL: Record<string, string> = {
   mechanic: 'Mecânico',
+  electrician: 'Eletricista',
   admin: 'Admin',
 };

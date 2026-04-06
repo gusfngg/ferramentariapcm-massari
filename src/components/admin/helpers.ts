@@ -15,6 +15,12 @@ export function classifyEmployeeSpecialty(employee: PublicEmployee): EmployeeSpe
   const normalized = `${employee.department} ${employee.role}`.toLowerCase();
 
   if (normalized.includes('lubr')) return 'lubrication';
-  if (normalized.includes('eletr') || normalized.includes('elétr')) return 'electrical';
+  if (
+    normalized.includes('eletr') ||
+    normalized.includes('elétr') ||
+    normalized.includes('electric')
+  ) {
+    return 'electrical';
+  }
   return 'mechanics';
 }

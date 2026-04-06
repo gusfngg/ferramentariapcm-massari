@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { deleteToolById, getToolById, hasActiveWithdrawalForTool, updateTool } from '@/lib/db';
 import { Tool } from '@/lib/types';
 import { removeStoredImage, saveUploadedImage, UploadValidationError } from '@/lib/uploads';
@@ -70,6 +71,7 @@ export async function PUT(request: Request, { params }: { params: { id: string }
       photoUrl: nextPhotoUrl,
     };
     const savedTool = await updateTool(nextTool);
+    revalidateTag('tools');
 
     return NextResponse.json(savedTool || nextTool);
   } catch (caughtError) {
@@ -97,6 +99,7 @@ export async function DELETE(_: Request, { params }: { params: { id: string } })
 
     removeStoredImage(tool.photoUrl);
     await deleteToolById(params.id);
+    revalidateTag('tools');
 
     return NextResponse.json({ success: true });
   } catch (caughtError) {

@@ -1,11 +1,13 @@
 'use client';
 
 import Image from 'next/image';
-import { startTransition, useDeferredValue, useEffect, useState } from 'react';
+import { useDeferredValue, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { PublicEmployee, Tool, Withdrawal } from '@/lib/types';
+import { Withdrawal } from '@/lib/types';
 import ToolIcon from '@/components/ToolIcon';
 import { Skeleton } from '@/components/ui/skeleton';
+import { employeesQueryOptions, queryKeys, toolsQueryOptions, withdrawalsQueryOptions } from '@/lib/query';
 import clsx from 'clsx';
 
 function getInitials(name: string) {
@@ -33,63 +35,37 @@ function formatDateTime(dateStr?: string) {
 }
 
 export default function DevolucaoPage() {
+  const queryClient = useQueryClient();
   const { employee } = useAuth();
-  const [employees, setEmployees] = useState<PublicEmployee[]>([]);
-  const [tools, setTools] = useState<Tool[]>([]);
-  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [search, setSearch] = useState('');
   const [expandedEmployees, setExpandedEmployees] = useState<Record<string, boolean>>({});
   const [returning, setReturning] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
   const deferredSearch = useDeferredValue(search);
 
-  const loadData = async (showSkeleton = false) => {
-    if (showSkeleton) {
-      setIsLoading(true);
-    }
-    try {
-      const [employeesResponse, toolsResponse, withdrawalsResponse] = await Promise.all([
-        fetch('/api/employees', { cache: 'no-store' }),
-        fetch('/api/tools', { cache: 'no-store' }),
-        fetch('/api/withdrawals', { cache: 'no-store' }),
-      ]);
+  const employeesQuery = useQuery({
+    ...employeesQueryOptions,
+    refetchInterval: 4000,
+  });
+  const toolsQuery = useQuery({
+    ...toolsQueryOptions,
+    refetchInterval: 4000,
+  });
+  const withdrawalsQuery = useQuery({
+    ...withdrawalsQueryOptions,
+    refetchInterval: 4000,
+  });
 
-      const [employeesPayload, toolsPayload, withdrawalsPayload] = await Promise.all([
-        employeesResponse.json(),
-        toolsResponse.json(),
-        withdrawalsResponse.json(),
-      ]);
-
-      startTransition(() => {
-        setEmployees(Array.isArray(employeesPayload) ? employeesPayload : []);
-        setTools(Array.isArray(toolsPayload) ? toolsPayload : []);
-        setWithdrawals(Array.isArray(withdrawalsPayload) ? withdrawalsPayload : []);
-      });
-
-      if (!employeesResponse.ok || !toolsResponse.ok || !withdrawalsResponse.ok) {
-        setError('Falha ao carregar dados de devolução.');
-      }
-    } catch {
-      setEmployees([]);
-      setTools([]);
-      setWithdrawals([]);
-      setError('Erro de conexão ao carregar devoluções.');
-    } finally {
-      if (showSkeleton) {
-        setIsLoading(false);
-      }
-    }
-  };
-
-  useEffect(() => {
-    loadData(true);
-    const interval = window.setInterval(() => {
-      loadData(false);
-    }, 4000);
-    return () => window.clearInterval(interval);
-  }, []);
+  const employees = employeesQuery.data ?? [];
+  const tools = toolsQuery.data ?? [];
+  const withdrawals = withdrawalsQuery.data ?? [];
+  const queryError =
+    (employeesQuery.error instanceof Error && employeesQuery.error.message) ||
+    (toolsQuery.error instanceof Error && toolsQuery.error.message) ||
+    (withdrawalsQuery.error instanceof Error && withdrawalsQuery.error.message) ||
+    '';
+  const isLoading = employeesQuery.isLoading || toolsQuery.isLoading || withdrawalsQuery.isLoading;
 
   const activeWithdrawals = withdrawals.filter((w) => w.status === 'active');
   const canReturnAnyTool = employee?.role === 'admin';
@@ -130,16 +106,15 @@ export default function DevolucaoPage() {
       }
 
       setSuccess(withdrawalId);
-      startTransition(() => {
-        setWithdrawals((current) =>
+      queryClient.setQueryData<Withdrawal[]>(queryKeys.withdrawals, (current = []) =>
           current.map((wd) =>
             wd.id === withdrawalId
               ? { ...wd, status: 'returned', returnedAt: new Date().toISOString() }
               : wd
           )
-        );
-      });
-      void loadData(false);
+      );
+      void queryClient.invalidateQueries({ queryKey: queryKeys.withdrawals });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tools });
       setTimeout(() => setSuccess(null), 2000);
     } catch {
       setError('Erro de conexão. Tente novamente.');
@@ -189,9 +164,9 @@ export default function DevolucaoPage() {
           </svg>
         </div>
 
-        {error && (
+        {(error || queryError) && (
           <div className="mb-4 rounded-xl border border-red-100 bg-red-50 p-3">
-            <p className="text-brand-red text-sm font-medium">{error}</p>
+            <p className="text-brand-red text-sm font-medium">{error || queryError}</p>
           </div>
         )}
 

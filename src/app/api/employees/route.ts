@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
-import { createEmployee, employeeBadgeExists, getEmployees } from '@/lib/db';
+import { revalidateTag } from 'next/cache';
+import { createEmployee, employeeBadgeExists } from '@/lib/db';
+import { readCachedEmployees } from '@/lib/db-cache';
 import { Employee } from '@/lib/types';
 import { isSupremeAdmin, isValidBadge, isValidPin, sanitizeEmployee, SUPREME_ADMIN_BADGE } from '@/lib/auth';
 import { saveUploadedImage, UploadValidationError } from '@/lib/uploads';
 import { v4 as uuidv4 } from 'uuid';
 
-const ALLOWED_ROLES: Employee['role'][] = ['mechanic', 'admin'];
+const ALLOWED_ROLES: Employee['role'][] = ['mechanic', 'electrician', 'admin'];
 const ALLOWED_SHIFTS: Employee['shift'][] = ['A', 'B', 'C'];
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -14,7 +16,7 @@ export const revalidate = 0;
 export async function GET() {
   try {
     return NextResponse.json(
-      (await getEmployees()).filter((employee) => !isSupremeAdmin(employee)).map(sanitizeEmployee),
+      (await readCachedEmployees()).filter((employee) => !isSupremeAdmin(employee)).map(sanitizeEmployee),
       {
         headers: {
           'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
@@ -84,6 +86,7 @@ export async function POST(request: Request) {
     };
 
     await createEmployee(newEmployee);
+    revalidateTag('employees');
 
     return NextResponse.json(sanitizeEmployee(newEmployee), { status: 201 });
   } catch (caughtError) {

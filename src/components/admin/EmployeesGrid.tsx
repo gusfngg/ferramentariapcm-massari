@@ -86,7 +86,7 @@ function EmployeeCard({
           <div
             className={clsx(
               'relative flex h-10 w-10 flex-shrink-0 items-center justify-center overflow-hidden rounded-xl border border-brand-gray-border font-display text-base font-black text-white',
-              employee.role === 'mechanic' ? 'bg-brand-black' : 'bg-brand-red'
+              employee.role === 'admin' ? 'bg-brand-red' : 'bg-brand-black'
             )}
             style={{ fontFamily: "var(--font-display)" }}
           >

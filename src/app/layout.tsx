@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono, Sora } from 'next/font/google';
 import './globals.css';
 import AppShell from '@/components/AppShell';
 import { AuthProvider } from '@/components/auth/AuthProvider';
+import QueryProvider from '@/components/providers/QueryProvider';
 
 export const metadata: Metadata = {
   title: 'Sala de Ferramentas',
@@ -38,9 +39,11 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body className={`${sora.variable} ${jetBrainsMono.variable} ${inter.variable} antialiased`}>
-        <AuthProvider>
-          <AppShell>{children}</AppShell>
-        </AuthProvider>
+        <QueryProvider>
+          <AuthProvider>
+            <AppShell>{children}</AppShell>
+          </AuthProvider>
+        </QueryProvider>
       </body>
     </html>
   );

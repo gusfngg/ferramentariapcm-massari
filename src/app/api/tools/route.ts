@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { createTool, getTools } from '@/lib/db';
+import { revalidateTag } from 'next/cache';
+import { createTool } from '@/lib/db';
+import { readCachedTools } from '@/lib/db-cache';
 import { Tool } from '@/lib/types';
 import { saveUploadedImage, UploadValidationError } from '@/lib/uploads';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,7 +14,7 @@ export const revalidate = 0;
 
 export async function GET() {
   try {
-    return NextResponse.json(await getTools(), {
+    return NextResponse.json(await readCachedTools(), {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
       },
@@ -64,6 +66,7 @@ export async function POST(request: Request) {
     };
 
     await createTool(newTool);
+    revalidateTag('tools');
 
     return NextResponse.json(newTool, { status: 201 });
   } catch (caughtError) {
